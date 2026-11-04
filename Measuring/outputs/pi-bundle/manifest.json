@@ -1,0 +1,19 @@
+{
+  "version": "v-20261021-162235-b9a4",
+  "training_count": 27,
+  "threshold": 0.5,
+  "architecture": "MobileNetV2 ImageNet V2 features + balanced logistic regression",
+  "preprocess_version": "barrel-v1-224",
+  "runtime": "OpenCV DNN + NumPy; CPU",
+  "input_shape": [
+    1,
+    3,
+    224,
+    224
+  ],
+  "hardware_tested": false,
+  "sha256": {
+    "features.onnx": "24e03dc8d4e242eff0707421860366891d7e6614e1faf3d41586f81bd888832c",
+    "classifier.json": "6e992afd7374992791d7245c199da8f57de3e209ca3bf09aabad4bfbada894f9"
+  }
+}

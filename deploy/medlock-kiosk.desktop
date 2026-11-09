@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=MedLock local kiosk
+Comment=For an OS-managed display only; do not use with native ILI9341 mode
+Exec=/opt/medlock/deploy/kiosk.sh
+Terminal=false

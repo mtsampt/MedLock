@@ -1,0 +1,28 @@
+[Unit]
+Description=MedLock unified bench station
+After=local-fs.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=medlock
+Group=medlock
+SupplementaryGroups=gpio spi input video
+WorkingDirectory=/opt/medlock
+# Explicit application args live in /etc/medlock/station.env (see README).
+EnvironmentFile=/etc/medlock/station.env
+ExecStart=/opt/medlock/.venv/bin/python -m medlock_device --bundle /opt/medlock/model --log /var/lib/medlock/device-events.jsonl $MEDLOCK_ARGS
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+StateDirectory=medlock
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/medlock
+
+[Install]
+WantedBy=multi-user.target

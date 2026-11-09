@@ -1,0 +1,20 @@
+{
+  "medication": "Pregnyl preparation — bench prototype",
+  "prototype": true,
+  "target_volume_ml": null,
+  "tolerance_ml": null,
+  "supplies": [
+    {"id": "diluent", "label": "Diluent vial"},
+    {"id": "powder", "label": "Powder vial"},
+    {"id": "syringe", "label": "Syringe"},
+    {"id": "needle", "label": "Needle"},
+    {"id": "wipes", "label": "Alcohol wipes"}
+  ],
+  "prep_steps": [
+    {"id": "wipe", "title": "Wipe both vial tops", "detail": "Use one alcohol wipe for each vial. Let them dry."},
+    {"id": "draw-diluent", "title": "Draw the configured diluent", "detail": "Bench flow only. A verified target volume has not been configured."},
+    {"id": "inject-powder", "title": "Transfer diluent to the powder vial", "detail": "Prototype preparation step. Confirm the intended protocol before hardware trials."},
+    {"id": "swirl", "title": "Swirl gently to dissolve", "detail": "Inspect the liquid for undissolved material.", "warning": "Do not shake the vial."},
+    {"id": "draw-dose", "title": "Draw the configured amount", "detail": "Use the agreed bench protocol. This software does not prescribe a dose."}
+  ]
+}

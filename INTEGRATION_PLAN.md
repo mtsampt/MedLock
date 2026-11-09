@@ -5,6 +5,10 @@ Repository: `mtsampt/MedLock`
 Integration branch: `merge_work`  
 Starting point: `main` at `3a86592732b867d9f74c1565b48d5c1b78b0dd56`
 
+## Implementation status — November 9, 2026
+
+The unified software, replay flow, calibration tooling and deployment packaging are implemented on merge_work. See docs/VERIFICATION.md for current evidence, docs/REPORT_ALIGNMENT.md for the project-report reconciliation and docs/HARDWARE_ACCEPTANCE.md for remaining measured gates. The full plan is still in progress: physical Pi/display/GPIO tests, independent dock accuracy and measured volume calibration are outstanding.
+
 ## Goal and scope
 
 Combine the three contributions into one locally running Raspberry Pi station: the measurement and device code in `Measuring/`, the guided interface in `medlock-ui/`, and the acquisition/controller work in `Acquisition.py` and `State Machine.py`.

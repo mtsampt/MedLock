@@ -1,5 +1,7 @@
 # MedLock Image Lab
 
+For the integrated Pi application, see [the unified station guide](../docs/INTEGRATION.md). This document covers the separate laptop training lab.
+
 A local bench prototype for classifying **visible air / no visible air** in water-filled syringe photos. The first dataset contains 27 photos (18 air, 9 no visible air). The six previously ambiguous negatives use Matt's confirmation.
 
 ## Open the app

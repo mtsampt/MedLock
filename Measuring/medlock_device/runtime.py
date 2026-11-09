@@ -4,26 +4,38 @@ import hashlib
 import json
 import math
 import subprocess
-import threading
-import time
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from medlock_lab.imaging import PREPROCESS_VERSION, ImageProblem, clean, decode, tensor_array
+from medlock_lab.imaging import PREPROCESS_VERSION, tensor_array
+from .acquisition import Acquisition
 
 
 class Engine:
     """ONNX feature extractor + the unchanged fitted logistic-regression head."""
     def __init__(self, bundle: Path, threads=2):
+        bundle = Path(bundle)
         self.metadata = json.loads((bundle / 'manifest.json').read_text())
+        threshold = self.metadata.get('threshold')
+        if type(threshold) not in (float, int) or not math.isfinite(threshold) or not 0 < threshold < 1:
+            raise ValueError('Model threshold must be finite and between zero and one.')
+        if self.metadata.get('input_shape') != [1, 3, 224, 224] or not self.metadata.get('version'):
+            raise ValueError('Unsupported model input shape or missing version.')
+        if set(self.metadata.get('sha256', {})) != {'features.onnx', 'classifier.json'}:
+            raise ValueError('Model manifest must hash both inference files.')
         if self.metadata['preprocess_version'] != PREPROCESS_VERSION:
             raise ValueError('Model and image preprocessing versions do not match.')
         for name, digest in self.metadata['sha256'].items():
             if hashlib.sha256((bundle / name).read_bytes()).hexdigest() != digest:
                 raise ValueError(f'Model checksum mismatch: {name}')
         self.parameters = json.loads((bundle / 'classifier.json').read_text())
+        arrays = [np.asarray(self.parameters[key], dtype=np.float64) for key in ('mean', 'scale', 'coef')]
+        if any(a.ndim != 1 or len(a) != 1280 or not np.isfinite(a).all() for a in arrays) or np.any(arrays[1] <= 0):
+            raise ValueError('Invalid classifier parameters.')
+        if type(self.parameters.get('intercept')) not in (int, float) or not math.isfinite(self.parameters['intercept']):
+            raise ValueError('Invalid classifier intercept.')
         cv2.setNumThreads(threads)
         self.net = cv2.dnn.readNetFromONNX(str(bundle / 'features.onnx'))
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
@@ -44,6 +56,7 @@ class Engine:
 
 
 class ReplayCamera:
+    simulated = True
     mode = 'photo replay — simulated hardware'
     def __init__(self, directory):
         self.files = sorted(p for p in Path(directory).iterdir() if p.suffix.lower() in {'.jpg', '.jpeg', '.png', '.webp'})
@@ -58,6 +71,7 @@ class ReplayCamera:
 
 
 class PiCamera:
+    simulated = False
     mode = 'Pi CSI camera — rpicam-still'
     def capture(self):
         result = subprocess.run(['rpicam-still', '--nopreview', '--timeout', '1500',
@@ -67,70 +81,5 @@ class PiCamera:
         return result.stdout, 'pi-camera.jpg'
 
 
-class Station:
-    def __init__(self, engine, camera, log_path, rotation=0, seat=None, light=None):
-        self.engine, self.camera = engine, camera
-        self.log_path = Path(log_path)
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self.rotation, self.seat, self.light = rotation, seat, light
-        self.lock = threading.Lock()
-        self.preview = None
-        self.result = {'state': 'waiting', 'message': 'Seat the syringe, then capture.'}
-
-    def check(self, simulated_seated):
-        if not self.lock.acquire(blocking=False):
-            return {'state': 'busy', 'message': 'A capture is already running.'}, 409
-        started = time.perf_counter()
-        self.preview = None
-        result = {'state': 'unable', 'label': None, 'air_score': None,
-                  'volume_ml': None, 'volume_status': 'not implemented',
-                  'mode': self.camera.mode,
-                  'seat_mode': 'GPIO' if self.seat else 'manual simulation',
-                  'model_version': self.engine.metadata['version']}
-        light_on = False
-        try:
-            is_seated = lambda: bool(self.seat.is_pressed) if self.seat else simulated_seated
-            if not is_seated():
-                raise ImageProblem('Syringe is not seated. Previous result cleared.')
-            if self.light:
-                self.light.on()
-                light_on = True
-                time.sleep(.2)
-            data, name = self.camera.capture()
-            result['source'] = name
-            im = decode(data).rotate(self.rotation, expand=True)
-            processed, quality = clean(im)
-            self.preview = processed
-            result['image_quality'] = quality
-            if quality['warnings']:
-                raise ImageProblem('Image is too soft. Refocus and capture again.')
-            if not is_seated():
-                raise ImageProblem('Syringe moved during capture. Capture again.')
-            infer_start = time.perf_counter()
-            prediction = self.engine.predict(processed)
-            result['inference_ms'] = round((time.perf_counter() - infer_start) * 1000, 1)
-            if not is_seated():
-                raise ImageProblem('Syringe moved during processing. Capture again.')
-            result.update(prediction)
-            result['state'] = 'air_detected' if prediction['label'] == 'air' else 'no_air_detected'
-            result['message'] = ('Visible air detected' if prediction['label'] == 'air' else 'No visible air detected')
-        except (ImageProblem, ValueError) as exc:
-            result['message'] = str(exc)
-        except Exception as exc:
-            result['message'] = 'Camera or inference failed. Check the device log and retry.'
-            result['error'] = f'{type(exc).__name__}: {exc}'
-        finally:
-            if light_on:
-                try:
-                    self.light.off()
-                except Exception:
-                    result.update(state='unable', label=None, air_score=None, message='Backlight control failed.')
-            result['elapsed_ms'] = round((time.perf_counter() - started) * 1000, 1)
-            result['timestamp'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-            self.result = result
-            try:
-                with self.log_path.open('a') as log:
-                    log.write(json.dumps(result) + '\n')
-            finally:
-                self.lock.release()
-        return result, 200
+# Public compatibility name; acquisition is implemented in one place.
+Station = Acquisition

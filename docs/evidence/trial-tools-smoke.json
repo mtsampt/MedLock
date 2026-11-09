@@ -1,0 +1,109 @@
+{
+  "format_version": 1,
+  "scope": "Recorded bench trials only; not physical or clinical certification.",
+  "total_records": 1,
+  "physical_records": 0,
+  "excluded_nonphysical": 1,
+  "criteria": {
+    "S1": {
+      "status": "insufficient_evidence",
+      "metrics": {
+        "attempts": 0,
+        "usable": 0,
+        "excluded": 0,
+        "by_fill": {
+          "0.5": {
+            "attempts": 0,
+            "usable": 0
+          },
+          "1.0": {
+            "attempts": 0,
+            "usable": 0
+          },
+          "1.5": {
+            "attempts": 0,
+            "usable": 0
+          },
+          "2.0": {
+            "attempts": 0,
+            "usable": 0
+          },
+          "2.5": {
+            "attempts": 0,
+            "usable": 0
+          }
+        },
+        "within_005_ml": 0,
+        "within_rate": null,
+        "max_error_ml": null
+      },
+      "missing": [
+        "Need 20 usable independent observations at each of 0.5, 1.0, 1.5, 2.0 and 2.5 mL; all failed attempts remain reported.",
+        "Supply the matching calibration and archived image evidence for every usable volume trial."
+      ]
+    },
+    "S2": {
+      "status": "insufficient_evidence",
+      "metrics": {
+        "attempts": 0,
+        "air_bands": {},
+        "positive_references": 0,
+        "detected": 0,
+        "sensitivity": null,
+        "unable": 0
+      },
+      "missing": [
+        "Need >=100 trials with measured air below, at and above 0.10 mL."
+      ]
+    },
+    "S3": {
+      "status": "insufficient_evidence",
+      "metrics": {
+        "attempts": 0,
+        "valid_cases": 0,
+        "invalid_cases": 0,
+        "valid_passes": 0,
+        "valid_pass_rate": null,
+        "false_passes": 0,
+        "unable": 0
+      },
+      "missing": [
+        "Need independently labelled valid and invalid combined trials.",
+        "Need the matching calibration and independent archived images for combined trials."
+      ]
+    },
+    "S5": {
+      "status": "insufficient_evidence",
+      "metrics": {
+        "attempts": 0,
+        "timed": 0,
+        "at_most_10s": 0,
+        "fast_rate": null,
+        "max_ms": null
+      },
+      "missing": [
+        "Insufficient timed physical trials for the declared sample count."
+      ]
+    },
+    "S7": {
+      "status": "insufficient_evidence",
+      "metrics": {
+        "attempts": 0,
+        "actual_syringes": [],
+        "unable": 0
+      },
+      "missing": [
+        "Need two identified unsupported syringe brands.",
+        "A matching calibrated supported-syringe control must pass; all-unable software is not evidence of discrimination."
+      ]
+    }
+  },
+  "manual_evidence_required": [
+    "S4 seat/load/lift/fault tests",
+    "S6 comprehension sessions",
+    "S8 actual BOM cost",
+    "Pi installation, reboot recovery, optical setup and independent image-quality checks"
+  ],
+  "trial_file_sha256": "d937f80fb29670a70a90ae959e6102adfd419b7864cf39656a89d774b52977fe",
+  "calibration_sha256": null
+}

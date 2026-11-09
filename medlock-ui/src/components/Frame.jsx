@@ -1,7 +1,7 @@
 // Shared layout for every screen: progress bar on top, Help top-right,
 // one instruction in the middle, Back bottom-left, primary action bottom-right.
 
-export default function Frame({ step, totalSteps, onBack, onHelp, title, children, primary, secondary }) {
+export default function Frame({ step, totalSteps, onBack, onHelp, title, children, primary, secondary, backInHeader }) {
   return (
     <div className="frame">
       <header className="frame-top">
@@ -17,8 +17,9 @@ export default function Frame({ step, totalSteps, onBack, onHelp, title, childre
         ) : (
           <span className="brand">MedLock</span>
         )}
+        {backInHeader && onBack && <button className="btn btn-ghost" data-action="back" onClick={onBack}>Back</button>}
         {onHelp && (
-          <button className="btn btn-ghost" onClick={onHelp}>? Help</button>
+          <button className="btn btn-ghost" data-action="help" onClick={onHelp}>? Help</button>
         )}
       </header>
 
@@ -28,7 +29,7 @@ export default function Frame({ step, totalSteps, onBack, onHelp, title, childre
       </main>
 
       <footer className="frame-bottom">
-        {onBack ? <button className="btn btn-secondary" onClick={onBack}>← Back</button> : <span />}
+        {onBack && !backInHeader ? <button className="btn btn-secondary" data-action="back" onClick={onBack}>← Back</button> : <span />}
         <div className="frame-actions">
           {secondary}
           {primary}

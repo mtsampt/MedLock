@@ -1,83 +1,51 @@
-// Single place the UI talks to the backend.
-//
-// Set VITE_API_URL (e.g. in a .env file) to point at the real FastAPI
-// server. With no URL, the UI uses the mock below, which the dev panel
-// controls, so you can build every screen before the hardware works.
-//
-// API contract (agree on this with the backend owner):
-//   GET  /supplies  -> { holders: { [supplyId]: { present: bool, correct: bool } } }
-//   POST /check     -> { verdict: "pass" | "fix" | "unable", reason: str, action: str,
-//                        volume_ml: number | null, air_ml: number | null }
-//   POST /log       body { event: str, at: ISO string } -> { ok: true }
+// Real station API only. Replay is explicitly selected by the backend CLI.
+const API_URL = import.meta.env?.VITE_API_URL || ''
+const SCREENS = new Set(['start', 'supplies', 'prep', 'check', 'checking', 'result', 'done'])
 
-const API_URL = import.meta.env.VITE_API_URL
-
-// ---- Mock backend --------------------------------------------------------
-
-export const mock = {
-  holders: {
-    diluent: { present: true, correct: true },
-    powder: { present: true, correct: true },
-    syringe: { present: true, correct: true },
-    needle: { present: false, correct: true },
-    wipes: { present: true, correct: true },
-  },
-  nextVerdict: 'pass',
-  listeners: new Set(),
-  set(patch) {
-    Object.assign(this, patch)
-    this.listeners.forEach((fn) => fn())
-  },
-}
-
-const MOCK_RESULTS = {
-  pass: { verdict: 'pass', reason: 'Volume and air checks passed.', action: '', volume_ml: 1.0, air_ml: 0.0 },
-  fix: {
-    verdict: 'fix',
-    reason: 'Air bubble detected',
-    action: 'Hold the syringe needle-up, tap it so the bubble rises, then push the air out.',
-    volume_ml: 0.92,
-    air_ml: 0.14,
-  },
-  unable: {
-    verdict: 'unable',
-    reason: 'Syringe not seated correctly',
-    action: 'Take the syringe out and press it fully into the dock.',
-    volume_ml: null,
-    air_ml: null,
-  },
-}
-
-const wait = (ms) => new Promise((r) => setTimeout(r, ms))
-
-// ---- Public API ----------------------------------------------------------
-
-export async function getSupplies() {
-  if (API_URL) {
-    const res = await fetch(`${API_URL}/supplies`)
-    return res.json()
+export function validateState(value) {
+  const bad = () => { throw new Error('Invalid station response') }
+  if (!value || typeof value !== 'object' || typeof value.session_id !== 'string' ||
+      !Number.isInteger(value.revision) || !SCREENS.has(value.screen) ||
+      !Array.isArray(value.confirmed) || typeof value.simulated !== 'boolean' ||
+      typeof value.help_open !== 'boolean' || typeof value.seated !== 'boolean') bad()
+  const p = value.protocol
+  if (!p || typeof p.medication !== 'string' || !Array.isArray(p.supplies) || !p.supplies.length ||
+      !Array.isArray(p.prep_steps) || !p.prep_steps.length ||
+      p.supplies.some(item => !item || typeof item.id !== 'string' || typeof item.label !== 'string') ||
+      p.prep_steps.some(item => !item || typeof item.title !== 'string' || typeof item.detail !== 'string')) bad()
+  if (value.screen === 'supplies' && (!Number.isInteger(value.supply_index) || value.supply_index < 0 || value.supply_index >= p.supplies.length)) bad()
+  if (value.screen === 'prep' && (!Number.isInteger(value.prep_index) || value.prep_index < 0 || value.prep_index >= p.prep_steps.length)) bad()
+  if (value.screen === 'result' || value.screen === 'done') {
+    const r = value.result
+    if (!r || !['pass', 'fix', 'unable'].includes(r.verdict) || typeof r.reason !== 'string') bad()
+    if (r.volume_ml != null && (typeof r.volume_ml !== 'number' || !Number.isFinite(r.volume_ml) || r.volume_ml < 0)) bad()
+    if (r.verdict === 'pass' && (r.valid !== true || r.air_detected !== false || r.syringe_seated !== true ||
+        r.volume_ml == null || typeof p.target_volume_ml !== 'number' || !Number.isFinite(p.target_volume_ml) ||
+        typeof p.tolerance_ml !== 'number' || !Number.isFinite(p.tolerance_ml) || p.tolerance_ml <= 0 ||
+        Math.abs(r.volume_ml - p.target_volume_ml) > p.tolerance_ml || !value.check_id ||
+        r.check_id !== value.check_id || r.session_id !== value.session_id)) throw new Error('Incomplete pass response')
   }
-  return { holders: structuredClone(mock.holders) }
+  return value
 }
 
-export async function checkSyringe() {
-  if (API_URL) {
-    const res = await fetch(`${API_URL}/check`, { method: 'POST' })
-    return res.json()
-  }
-  await wait(2000) // simulate camera + vision processing time
-  return MOCK_RESULTS[mock.nextVerdict]
+export async function request(path, options = {}, fetcher = fetch) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5000)
+  try {
+    const response = await fetcher(`${API_URL}/api${path}`, { ...options, signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', ...options.headers } })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || `Station request failed (${response.status})`)
+    return data
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('Station timed out. Reconnect to check its current state.')
+    throw error
+  } finally { clearTimeout(timeout) }
 }
 
-export async function logEvent(event) {
-  const body = { event, at: new Date().toISOString() }
-  if (API_URL) {
-    await fetch(`${API_URL}/log`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    return
-  }
-  console.log('[mock log]', body)
-}
+export const getState = async () => validateState(await request('/state'))
+export const sendAction = async (action, state) => validateState(await request(action === 'capture' ? '/check' : '/action', {
+  method: 'POST', body: JSON.stringify({ action, session_id: state.session_id, revision: state.revision }),
+}))
+export const getSupplies = () => request('/supplies')
+export const logEvent = (event, check_id = null) => request('/log', { method: 'POST', body: JSON.stringify({ event, check_id }) })

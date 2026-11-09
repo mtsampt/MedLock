@@ -1,0 +1,9 @@
+{
+  "event": "ui_event",
+  "timestamp": "2026-11-09T22:31:07Z",
+  "session_id": "b647e3c1be784a4db62853a14a2aaf5c",
+  "revision": 15,
+  "name": "result_displayed",
+  "check_id": "2ca116f4aca44cb0b1aea96ab69deab5",
+  "seat_to_display_ack_ms": 746.7
+}

@@ -84,23 +84,35 @@ class EvdevTouch:
     def close(self):self.device.close()
 
 
-def run_native(station,args):
-    ui=TouchUI(station)
+def run_native(session,args,stop=None):
+    ui=TouchUI(session)
     display=ILI9341Display(args.display_cs,args.display_dc,args.display_reset,args.display_rotation)
     touch=None
     try:
         touch=EvdevTouch(args.touch_device,args.touch_swap,args.touch_invert_x,args.touch_invert_y)
         previous=None
-        while True:
+        displayed_check=None
+        while stop is None or not stop.is_set():
+            state=ui.snapshot()
             for x,y in touch.read_taps():
-                for b in ui.snapshot()['buttons']:
+                for b in state['buttons']:
                     if b['x']<=x<b['x']+b['width'] and b['y']<=y<b['y']+b['height']:
-                        ui.action(b['action']);break
+                        ui.action(b['action'],state);break
             signature=json.dumps(ui.snapshot(),sort_keys=True)
             if signature!=previous:
+                current=ui.snapshot()
                 display.show(ui.render())
+                if current['screen']=='result' and current['check_id']!=displayed_check:
+                    session.log_client_event('native_result_displayed',current['check_id'])
+                    displayed_check=current['check_id']
                 previous=signature
             time.sleep(.05)
     finally:
         if touch:touch.close()
-        display.close()
+        try:
+            from PIL import Image,ImageDraw
+            offline=Image.new('RGB',(320,240),'#fdfdfd')
+            ImageDraw.Draw(offline).text((12,100),'Station offline',fill='#20272b')
+            display.show(offline)
+        finally:
+            display.close()

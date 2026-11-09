@@ -7,7 +7,7 @@ export default function PrepStep({ prep, onNext, ...frame }) {
     <Frame
       {...frame}
       title={prep.title}
-      primary={<button className="btn btn-primary" onClick={onNext}>Done, next</button>}
+      primary={<button className="btn btn-primary" data-action="next" onClick={onNext}>Done, next</button>}
     >
       <p className="body-text">{prep.detail}</p>
       {prep.warning && (

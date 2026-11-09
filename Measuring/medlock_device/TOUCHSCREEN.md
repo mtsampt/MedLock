@@ -1,18 +1,8 @@
-# SparkFun COM-28379: 320 × 240 touchscreen
+# SparkFun COM-28379: unified 320 × 240 touchscreen
 
-The station now defaults to an exact **320 × 240 landscape** interface. It renders with Pillow and bundled DejaVu fonts (license in `fonts/LICENSE_DEJAVU`). The browser displays the same pixels and button rectangles that the native Pi adapter sends to the panel. There is no Chromium requirement for the native path.
+The native Pillow renderer now presents the guided preparation flow using the same Session controller and protocol as React. Run the unified command described in [the integration guide](../../docs/INTEGRATION.md). Native mode keeps the loopback API available; the browser UI needs a built medlock-ui/dist folder in a source checkout.
 
-## Try it without hardware
-
-Run the existing `python -m medlock_device --bundle ... --replay ...` command and open http://127.0.0.1:8767/.
-
-- **Seat:** tap “Seat (demo)”; no checkbox or tiny controls. The mode label explicitly says PHOTO REPLAY.
-- **Capture:** tap “Check syringe”. All controls are disabled during processing; hold-still instructions replace the old result.
-- **Result:** text and color distinguish AIR DETECTED, NO AIR DETECTED and UNABLE TO VERIFY. A no-air result is not shown as pass/ready.
-- **Details:** a crop thumbnail, timings and short failure advice are on a separate screen.
-- **Check again:** returns to the seat/capture screen and clears the displayed result and simulated seat input.
-
-The visual design follows the supplied patient-UI recording: white canvas, blue step progress and primary actions, outlined secondary controls and Help, gray illustration panels, and tinted result cards. Main touch targets are 48 px tall; Help is 60 × 44 px. Main action labels use 14 px bold type. No result screen scrolls. Two bottom actions are kept separate from Help. Help returns to the prior screen and retains its result. The recorded “Ready to inject” claim is not used: this model only checks visible air, and volume remains unimplemented. The desktop diagnostic interface remains at `/desktop`.
+The old Seat/Check/Details-only controller has been replaced. Begin, confirm supplies, advance preparation, then check. Photo replay requires explicit simulated seating. Hardware mode requires a seat GPIO; it never assumes a seated syringe. Both views clear stale results and cannot complete a combined check without calibrated volume.
 
 ## What the display actually needs
 
@@ -23,7 +13,7 @@ The native path uses:
 - `adafruit-circuitpython-rgb-display` + Blinka for ILI9341 pixel output on Pi SPI0.
 - Linux `ads7846` input driver for the XPT2046-compatible touchscreen, exposed as an evdev event device.
 - `python-evdev` for ABS_X/ABS_Y/BTN_TOUCH input. Coordinate scaling, swapping and inversion are supported.
-- The exact same `TouchUI` state controller, image renderer and inference engine used in browser mode.
+- The shared Session state controller, protocol and acquisition used by the React browser view.
 
 Before wiring, agree the pin allocation with the hardware member. Confirm the module supply/backlight requirements against the vendor information; keep Pi GPIO signals within 3.3 V logic. The LCD needs its own CS, DC and RESET pins. The touch controller needs separate CS and IRQ pins. Share SPI clock/data only as supported by the drivers. Do not reuse camera-seat or backlight-control pins for the display. The CLI checks software-controlled pin duplication and SPI0 bus pin conflicts; it cannot verify the physical wiring or the kernel overlay's touch IRQ/CS configuration.
 
@@ -50,9 +40,9 @@ The following is a template; replace all angle-bracket values with confirmed wir
 
 Then omit `--replay replay` to use the camera; set `--rotation 90` or `270` for its mounting as described in README. LCD orientation is independently `--display-rotation 90` (default) or `270`. Calibrate touch to that landscape orientation with `--touch-swap`, `--touch-invert-x`, `--touch-invert-y` as necessary. Do not apply the same correction both in the kernel and the app.
 
-Rendering is event-driven: a full panel frame is sent only when the UI changes. It starts conservatively at 16 MHz SPI and polls touch at 20 Hz; actual bus performance remains unmeasured. Native mode does not start a web server. Its capture worker runs separately, so the checking screen can be drawn while camera/inference work is in progress. Holding a touch produces one action per press.
+Rendering is event-driven: a full panel frame is sent only when the UI changes. It starts conservatively at 16 MHz SPI and polls touch at 20 Hz; actual bus performance remains unmeasured. Native mode also starts the shared loopback API server. Its capture worker runs separately, so the checking screen can be drawn while camera/inference work is in progress. Holding a touch produces one action per press.
 
-With no `--seat-pin`, the interface deliberately shows simulated seating even in camera mode. Physical seat GPIO must be configured and validated before that simulation control disappears. No liquid-volume algorithm or injection-clearance decision has been added.
+Hardware mode requires a configured seat pin. Simulated seating is available only with --replay. Optional occupied-barrel volume calibration is described in the integration guide; no calibration or injection-clearance decision is bundled.
 
 ## Acceptance checks when hardware arrives
 

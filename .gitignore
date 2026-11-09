@@ -7,3 +7,9 @@ __pycache__/
 *-shm
 .env
 .env.*
+node_modules/
+dist/
+deployment/
+device-events.jsonl
+session-events.jsonl
+runtime/

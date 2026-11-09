@@ -17,6 +17,10 @@ def test_bundle_is_self_contained_offline_and_training_free(tmp_path):
     assert Path(result['archive']).is_file()
     assert (out/'medlock_device/ui/index.html').is_file()
     assert (out/'deploy/medlock.service').is_file()
+    for script in ['record_trial.py','evaluate_trials.py']:
+        check=subprocess.run([sys.executable,'-I',str(out/'scripts'/script),'--help'],cwd=tmp_path,capture_output=True,text=True,timeout=10)
+        assert check.returncode==0,check.stderr
+    assert (out/'docs/BENCH_TRIALS.md').is_file()
     assert not (out/'medlock_lab/model.py').exists()
     script='''
 import json,sys

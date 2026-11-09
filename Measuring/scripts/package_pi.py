@@ -32,13 +32,14 @@ def package(out, ui, include_replay=True):
             shutil.copy2(root/'outputs/medlock-pilot-2026-10-21/images'/name,out/'replay'/name)
     shutil.copytree(repo/'deploy',out/'deploy')
     (out/'scripts').mkdir()
-    shutil.copy2(root/'scripts/calibrate_volume.py',out/'scripts/calibrate_volume.py')
+    for name in ['calibrate_volume.py','record_trial.py','evaluate_trials.py']:
+        shutil.copy2(root/'scripts'/name,out/'scripts'/name)
     (out/'docs').mkdir()
-    for name in ['INTEGRATION.md','API.md','BASELINE.md','VERIFICATION.md','REPORT_ALIGNMENT.md','HARDWARE_ACCEPTANCE.md']:
+    for name in ['INTEGRATION.md','API.md','BASELINE.md','VERIFICATION.md','REPORT_ALIGNMENT.md','HARDWARE_ACCEPTANCE.md','BENCH_TRIALS.md']:
         shutil.copy2(repo/'docs'/name,out/'docs'/name)
     shutil.copytree(repo/'docs/evidence',out/'docs/evidence')
     shutil.copy2(root/'requirements-device.txt',out/'requirements-device.txt')
-    shutil.copy2(repo/'docs/INTEGRATION.md',out/'README.md')
+    (out/'README.md').write_text((repo/'docs/INTEGRATION.md').read_text().replace('](BENCH_TRIALS.md)', '](docs/BENCH_TRIALS.md)'))
     (out/'TOUCHSCREEN.md').write_text((root/'medlock_device/TOUCHSCREEN.md').read_text().replace('../../docs/', 'docs/'))
     for name in ['README.md','TOUCHSCREEN.md']:
         target = out/'medlock_device'/name

@@ -74,6 +74,10 @@ The algorithm linearly interpolates volume from the fluid-side stopper position;
 
 Pass --volume-calibration and matching --setup-id to the station. Copy medlock_device/protocol.json to a separate file, set target_volume_ml and tolerance_ml from the agreed bench protocol, and pass --protocol. The runtime requires matching rotation, tolerance at least the calibration error bound and the whole target interval inside the calibrated volume range. Defaults deliberately leave both values null. Hardware calibration and held-out measured error remain pending.
 
+## Independent bench trials
+
+See [BENCH_TRIALS.md](BENCH_TRIALS.md) for scripts/record_trial.py and scripts/evaluate_trials.py. These commands retain independently supplied reference quantities, archived-image hashes, model/calibration identity and matched display acknowledgements. They exclude replay from physical acceptance calculations and leave missing evidence explicit.
+
 ## Verification
 
 Run pytest from Measuring and npm test/npm run build from medlock-ui. See docs/BASELINE.md, docs/API.md and docs/VERIFICATION.md in the source repository for evidence and remaining hardware gates. Tests and replay exercise software integration; they do not establish readiness for patient use.

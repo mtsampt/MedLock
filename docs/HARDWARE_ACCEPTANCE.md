@@ -22,3 +22,5 @@ Confirm supply voltage under load, backlight current/illumination uniformity, GP
 For each check save the session/check IDs, reference fill/air quantities, supported/unsupported syringe, expected validity, result/verdict/reason, measured volume, raw air finding, model/calibration versions, image quality and timing. Do not count an unable result as a correct pass or silently exclude it from valid-case yield. Report total trials, denominator and exclusions for each metric.
 
 Finally install the service and chosen display startup, disconnect network access, reboot, repeat the full flow and capture journal/log evidence. Record whether the native SPI or OS/browser path was used; only one driver may own the LCD.
+
+Use [the bench-trial recorder and evaluator](BENCH_TRIALS.md) to attach independent reference quantities to check IDs and calculate S1/S2/S3/S5/S7 sample metrics. Replay never counts as physical evidence.

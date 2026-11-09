@@ -42,9 +42,13 @@ class Acquisition:
         started = time.monotonic()
         self.preview = None
         self.result = {'state': 'checking', 'message': 'Checking syringe.'}
-        result = Measurement(mode=self.camera.mode, session_id=session_id, check_id=check_id,
+        result = Measurement(rotation=self.rotation, mode=self.camera.mode, session_id=session_id, check_id=check_id,
                              seat_mode='GPIO' if self.seat is not None else ('simulation' if self.simulated else 'unavailable'),
                              model_version=self.engine.metadata['version'])
+        calibration = getattr(self.volume, 'calibration', {})
+        result.calibration_version = getattr(self.volume, 'version', None)
+        result.syringe_profile = calibration.get('syringe_id')
+        result.setup_id = calibration.get('setup_id')
         light_attempted = False
         seated_at = None
         code = 200
@@ -84,10 +88,6 @@ class Acquisition:
             result.label, result.air_score = prediction['label'], prediction['air_score']
             result.air_detected = result.label == 'air'
             if self.volume is not None:
-                result.calibration_version = getattr(self.volume, 'version', None)
-                calibration = getattr(self.volume, 'calibration', {})
-                result.syringe_profile = calibration.get('syringe_id')
-                result.setup_id = calibration.get('setup_id')
                 try:
                     result.volume_ml = self.volume.estimate(image, result.image_quality)
                     if type(result.volume_ml) not in (int, float) or not math.isfinite(result.volume_ml) or result.volume_ml < 0:

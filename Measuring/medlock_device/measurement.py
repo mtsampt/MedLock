@@ -37,3 +37,4 @@ class Measurement:
 
     def as_dict(self):
         return asdict(self)
+    rotation: int = 0

@@ -7,7 +7,7 @@ The guided station UI sends revision-checked actions to the local API; the share
 ## Evidence collected
 
 - Baseline: 21 Python tests and the original React build passed before changes.
-- Current Python suite: 78 passed (including actual ONNX replay, original training/model regression, acquisition/controller/API tests, volume calibration gates, CLI startup/shutdown/restart). Includes report-aligned seat polarity, transient movement and encoder revision tests. Re-run the current suite to reproduce.
+- Current Python suite: 92 passed (including actual ONNX replay, original training/model regression, acquisition/controller/API tests, volume calibration gates, CLI startup/shutdown/restart). Includes report-aligned seat polarity, transient movement and encoder revision tests. Re-run the current suite to reproduce.
 - Frontend: 3 API tests and the production build passed. Build tested with Node 26.7.0, Vite 7.3.8; source requires Node >=22.12.0. Dependency audit reports zero known vulnerabilities after updating the original build tooling.
 - Browser, 320 × 240: start -> five manual supply confirmations -> five preparation steps -> simulated seating -> actual replay result. Result displayed **No visible air / Volume not verified**, with no completion button. No browser console warnings/errors were observed. The final replay recorded a [display acknowledgement](evidence/display-ack.json); this is a laptop measurement, not a Pi result.
 - Browser refresh retained controller state. Help returned to the same result. Retry cleared the result and simulated seating. An unseated check displayed Unable to verify.
@@ -15,6 +15,12 @@ The guided station UI sends revision-checked actions to the local API; the share
 - Isolated deployment test: built assets and model run from a temporary directory with network connections blocked and no torch/torchvision/sklearn imports.
 - Native renderer: generated and visually checked [start](evidence/native-start.png) and [result](evidence/native-result.png) frames from the actual replay controller. This verifies pixels, not SPI hardware.
 - Screenshots: [replay result](evidence/replay-result.png), [check screen](evidence/replay-check.png), [unseated result](evidence/unseated-result.png).
+
+## Independent trial workflow
+
+The packaged record_trial.py/evaluate_trials.py commands attach independently supplied reference quantities to a finished check and calculate the recorded S1/S2/S3/S5/S7 metrics. Fourteen tests cover provenance, calibration reuse, duplicate checks/images, malformed passes, error/yield denominators, missing timing, unsupported-brand controls and mixed model versions.
+
+An actual replay capture was archived, recorded through the CLI, and evaluated: [smoke result](evidence/trial-tools-smoke.json). It correctly reports zero physical trials, one excluded replay trial and insufficient evidence for every calculated target. This verifies the tooling, not device accuracy. No physical trial data were created.
 
 ## Remaining acceptance gates
 

@@ -14,6 +14,12 @@ Run the existing `python -m medlock_device --bundle ... --replay ...` command an
 
 The visual design follows the supplied patient-UI recording: white canvas, blue step progress and primary actions, outlined secondary controls and Help, gray illustration panels, and tinted result cards. Main touch targets are 48 px tall; Help is 60 × 44 px. Main action labels use 14 px bold type. No result screen scrolls. Two bottom actions are kept separate from Help. Help returns to the prior screen and retains its result. The recorded “Ready to inject” claim is not used: this model only checks visible air, and volume remains unimplemented. The desktop diagnostic interface remains at `/desktop`.
 
+## Existing circuit home-screen bridge
+
+For the Pi shown in the November 11 recording, use [Step 6 of the main README](../../README.md#6-show-the-app-on-the-little-screen-recorded-pi-setup). It reuses `/home/medlock/medlock_home.py` with its recorded SPI0.0, GPIO22 DC, GPIO18 LCD backlight, and 8 MHz settings. It mirrors the same browser frames and does not require a reset-pin guess, Blinka or touch calibration. It enables LCD output only; use the Pi browser for input until physical input is configured. This new bridge is software-tested, not yet physically verified. The original file is not edited.
+
+The report's imaging-backlight GPIO18 conflicts with using GPIO18 as the LCD backlight in the recorded script; confirm actual wiring before enabling any second owner of that pin.
+
 ## What the display actually needs
 
 SparkFun lists COM-28379 as an **ILI9341 TFT** with an **XPT2046 resistive touchscreen** library, and recommends it for Teensy. It is a component module, not an HDMI monitor or a Raspberry Pi display HAT. Display SPI and touch input are separate interfaces. The Pi adapter is implemented against those controller interfaces, but COM-28379, SPI bus sharing and touch operation are **not hardware tested**.

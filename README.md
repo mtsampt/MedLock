@@ -85,11 +85,27 @@ Refresh [MedLock on this Pi](http://127.0.0.1:8767/) in the Pi's browser. It now
 
 `--rotation 90` rotates the captured image counterclockwise. Choose `270` for the opposite mounting, or `0` if the image is already upright. The current crop algorithm requires **plunger at the top, tip at the bottom**, with the whole barrel visible. Different lighting and camera geometry can affect predictions; this first run is a hardware/function check, not an accuracy validation.
 
-### 6. Activate the little touchscreen and circuit sensors
+### 6. Show the app on the little screen (recorded Pi setup)
 
-The SPI touchscreen needs the **actual LCD CS, DC, RESET pins, touch CS/IRQ configuration, and Linux touch input device**. The seat sensor and backlight also need confirmed pin assignments. The display already showing a MedLock image may have an existing driver or app controlling it.
+The recorded `/home/medlock/medlock_home.py` program already drives the LCD using **SPI0.0, GPIO22 (data/command), GPIO18 (screen backlight), 8 MHz SPI, and a 320 × 240 frame**. A bridge now reuses that file's existing `command`, `init_lcd`, and `display_image` functions without modifying it. This matches the recorded code; the new bridge still needs its first physical run.
 
-**Do not guess those pins or start a second display driver.** First identify the current setup with the hardware teammate; then follow [the touchscreen integration guide](Measuring/medlock_device/TOUCHSCREEN.md). The native screen uses the same 320 × 240 renderer as the browser, but needs circuit-specific configuration. Volume measurement remains unimplemented.
+Copy this whole block into the Pi's Terminal. It updates the code, starts the camera app if necessary, temporarily stops the exact home-screen program, and mirrors the station to the small screen:
+
+```sh
+cd "$HOME/MedLock/Measuring" &&
+git -C .. pull --ff-only &&
+.venv/bin/python scripts/mirror_pi_display.py --start-app --take-over
+```
+
+If an earlier Step 4/5 app is already running, the bridge mirrors that existing app (including its current photo-replay/camera mode). If none is running, it starts real-camera mode with image rotation 90. To start with saved photos instead, add `--replay` to the last command. Stop a currently running Terminal app with Ctrl+C first if you want this command to choose a different mode.
+
+**Operate it from the Pi's browser** at [http://127.0.0.1:8767/](http://127.0.0.1:8767/): tap Seat (demo), Check syringe, Details, etc. The same screens should appear on the little LCD. **This enables screen output, not physical touch or rotary-encoder input.** Those still need their input configuration. Seating remains simulated.
+
+Leave the bridge Terminal open. Ctrl+C closes its display resources and restarts the original home-screen script if the bridge stopped it. The original file and boot configuration are unchanged. If the home-screen program automatically respawns or the script reports a GPIO conflict, send the exact error rather than stopping other services.
+
+The bridge checks the recorded constants before taking over and refuses other wiring. It needs `spidev` and `gpiozero`, already used by the working home screen. If Python reports missing `spidev`, install the distro package with `sudo apt install -y python3-spidev` and retry using the system-packages virtual environment from Step 2.
+
+**Pin discrepancy to resolve:** the recorded home-screen script uses GPIO18 for the LCD backlight, while the report also assigns GPIO18 to the imaging backlight driver. Do not configure a second GPIO18 owner with `--light-pin 18` alongside this bridge. Reconcile the actual PCB wiring before separate lighting/sensor integration. The generic ILI9341/Blinka mode in the [touchscreen guide](Measuring/medlock_device/TOUCHSCREEN.md) is a different display owner and must not run at the same time.
 
 ### Coming back later
 

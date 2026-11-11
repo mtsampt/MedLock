@@ -87,7 +87,7 @@ Refresh [MedLock on this Pi](http://127.0.0.1:8767/) in the Pi's browser. It now
 
 ### 6. Show the app on the little screen (recorded Pi setup)
 
-The recorded `/home/medlock/medlock_home.py` program already drives the LCD using **SPI0.0, GPIO22 (data/command), GPIO18 (screen backlight), 8 MHz SPI, and a 320 × 240 frame**. A bridge now reuses that file's existing `command`, `init_lcd`, and `display_image` functions without modifying it. This matches the recorded code; the new bridge still needs its first physical run.
+The recorded `/home/medlock/medlock_home.py` program already drives the LCD using **SPI0.0, GPIO22 (data/command), GPIO18 (screen backlight), 8 MHz SPI, and a 320 × 240 frame**. A bridge now reuses that file's existing `command`, `init_lcd`, and `display_image` functions without modifying it. The user has confirmed this bridge displays the app on the physical LCD.
 
 Copy this whole block into the Pi's Terminal. It updates the code, starts the camera app if necessary, temporarily stops the exact home-screen program, and mirrors the station to the small screen:
 
@@ -109,23 +109,40 @@ The bridge checks the recorded constants before taking over and refuses other wi
 
 ### 7. Enable touch on the little screen
 
-First identify the existing touch driver. Open a **second Terminal** so the working screen bridge can stay running, and copy this block:
+The supplied **MedLock REV B Gerbers** contain electrical net attributes confirming this wiring:
+
+| Display signal | J2 pad | Pi connection |
+| --- | --- | --- |
+| T_CS | 11 | BCM GPIO7 / physical pin26 / SPI0.1 |
+| T_CLK | 10 | BCM GPIO11 / physical pin23 |
+| T_DIN | 12 | BCM GPIO10 / physical pin19 |
+| T_DO | 13 | BCM GPIO9 / physical pin21 |
+| T_IRQ | 14 | **Unconnected on the PCB** |
+
+The app can **poll the XPT2046 directly over SPI**, checking pressure and position without an IRQ wire. It uses the existing `/dev/spidev0.1`; no wiring change, kernel overlay, evdev package or reboot is needed for this mode. This applies to the supplied REV B layout and matching harness; board revisions or hand modifications require rechecking. Physical touch and calibration remain **unverified until tested on the Pi**.
+
+Stop the currently running bridge with **Ctrl+C**. Also stop any earlier camera backend in its own Terminal so the updated backend can start. Copy this block:
 
 ```sh
 cd "$HOME/MedLock/Measuring" &&
 git -C .. pull --ff-only &&
-python3 scripts/check_pi_touch.py
+.venv/bin/python scripts/mirror_pi_display.py --start-app --take-over --spi-touch
 ```
 
-Send a photo of the output. This reports input names, access permissions, SPI driver names and relevant boot overlay settings. It does not read your keystrokes or modify wiring, drivers or boot settings.
+On first launch, the little screen shows **four blue + targets**, one at a time. Press each center gently for about half a second, then lift. A blunt plastic stylus can help; avoid sharp objects. The fourth point checks the calibration before saving it to `Measuring/outputs/touch-calibration.json`. The app then appears. Try **Help**, **Back**, **Seat (demo)** and **Check syringe**. Seating is still simulated in this launch mode. This controls MedLock on the little screen; it does not add touch to the HDMI desktop.
 
-**Do not choose a random event device or guess GPIOs.** A keyboard/mouse event device is not the little touchscreen. If the output lists an ADS7846/XPT2046 device, we can enable that device and calibrate it. If no touch controller is configured, we still need its actual touch-CS and IRQ wiring; the LCD's working CS/DC/backlight settings do not identify those touch pins.
+Later launches reuse calibration. To repeat setup:
 
-The bridge now supports `--touch-device`, `--touch-swap`, `--touch-invert-x` and `--touch-invert-y`. Physical touch remains **unverified** until tested. Its evdev reader uses one action per press, maps coordinates into the same 320 × 240 button regions as the screen renderer, and rejects taps from an old screen revision.
+```sh
+cd "$HOME/MedLock/Measuring" &&
+.venv/bin/python scripts/mirror_pi_display.py --start-app --take-over --spi-touch --calibrate-touch
+```
 
-Once a device is confirmed, install `python3-evdev` with apt. Stop/relaunch the bridge and any older station backend so the new revision guard is active. Add the **confirmed** input device to the Step 6 launch command; we will supply that exact copyable command after reviewing the diagnostic output. Touch calibration flags depend on screen orientation. The bridge takes exclusive input ownership while running to prevent touchscreen taps from also clicking the HDMI desktop. Closing it releases that device.
+If targets do not respond, send the exact terminal output. Do not add an `ads7846` overlay with a guessed IRQ pin: this board leaves that signal unconnected. The polling implementation filters unstable readings, requires consecutive samples and release between actions, and guards against taps on a stale UI revision. Pressure thresholds and responsiveness still need testing on the real controller. Calibration and mocked SPI tests do not establish physical operation.
 
-No touch overlay, kernel change, permission-group change or reboot is performed automatically. The setup for a missing ADS7846 driver must use the confirmed touch wiring, not the LCD reset/DC pins. The screen bridge continues to work in display-only mode without these touch arguments.
+The alternative `--touch-device /dev/input/eventX` remains available for hardware with a configured Linux touch input driver; it cannot be combined with `--spi-touch`. Its axis flags apply only to that evdev mode. The read-only `python3 scripts/check_pi_touch.py` helper can list input devices and SPI drivers if troubleshooting is needed.
+
+Reference for XPT2046 pressure/position polling and optional IRQ: [PJRC controller implementation](https://github.com/PaulStoffregen/XPT2046_Touchscreen/blob/master/XPT2046_Touchscreen.cpp).
 
 ### Coming back later
 

@@ -2,7 +2,7 @@
 
 The startup file is read, never edited. Only its three display functions are
 loaded; its top-level GPIO initialization and infinite loop are not executed.
-Optional touch uses a configured Linux input device. No touch GPIO is guessed.
+Optional touch uses Linux input or IRQ-free SPI polling on confirmed REV B wiring.
 """
 from __future__ import annotations
 
@@ -125,11 +125,16 @@ def main():
     parser.add_argument('--take-over',action='store_true',help='Temporarily stop the exact home-screen script')
     parser.add_argument('--rotation',type=int,choices=[0,90,180,270],default=90)
     parser.add_argument('--replay',action='store_true',help='Use saved photos if this command starts the app')
-    parser.add_argument('--touch-device',type=Path,help='Confirmed ADS7846/XPT2046 /dev/input/eventX')
+    group=parser.add_mutually_exclusive_group()
+    group.add_argument('--touch-device',type=Path,help='Confirmed ADS7846/XPT2046 /dev/input/eventX')
+    group.add_argument('--spi-touch',action='store_true',help='REV B XPT2046 on SPI0.1; IRQ not connected')
+    parser.add_argument('--calibrate-touch',action='store_true',help='Repeat four-target SPI touch setup')
+    parser.add_argument('--touch-calibration',type=Path,default=ROOT/'outputs/touch-calibration.json')
     parser.add_argument('--touch-swap',action='store_true')
     parser.add_argument('--touch-invert-x',action='store_true')
     parser.add_argument('--touch-invert-y',action='store_true')
     args=parser.parse_args()
+    if args.calibrate_touch and not args.spi_touch:parser.error('--calibrate-touch requires --spi-touch')
     if sys.platform!='linux':parser.error('Run this bridge on the Raspberry Pi, not the Mac.')
     code,constants=extract_functions(args.driver.read_text())
     frame_url='http://127.0.0.1:8767/api/touch/frame'
@@ -157,13 +162,17 @@ def main():
                 except (URLError,TimeoutError):
                     if time.monotonic()>deadline:raise RuntimeError('Station app startup timed out.')
                     time.sleep(.3)
-        if args.touch_device:
+        if args.touch_device or args.spi_touch:
             # Require the new revision guard before touching the running display.
             state=read_state(state_url)
             if not isinstance(state.get('revision'),int):
                 raise ValueError('Restart the updated station backend before enabling touch.')
-            from medlock_device.display_hardware import EvdevTouch
-            touch=EvdevTouch(args.touch_device,args.touch_swap,args.touch_invert_x,args.touch_invert_y,exclusive=True)
+            if args.spi_touch:
+                from medlock_device.spi_touch import SpiTouch
+                touch=SpiTouch(args.touch_calibration)
+            else:
+                from medlock_device.display_hardware import EvdevTouch
+                touch=EvdevTouch(args.touch_device,args.touch_swap,args.touch_invert_x,args.touch_invert_y,exclusive=True)
         if driver_pids(args.driver):
             if not args.take_over:raise RuntimeError('Home screen is running. Add --take-over to temporarily replace it.')
             stopped=stop_home(args.driver)
@@ -173,10 +182,14 @@ def main():
         namespace={'time':time,'spi':spi,'dc':dc,**constants}
         exec(code,namespace)
         namespace['init_lcd']()
+        if args.spi_touch and (args.calibrate_touch or touch.matrix is None):
+            from medlock_device.spi_touch import calibrate
+            print('Press each of the four + targets on the little screen, then lift.',flush=True)
+            calibrate(touch,namespace['display_image'])
         shown_state=None
         previous=None
         print('\nMedLock is now mirrored to the little screen.',flush=True)
-        print('Touch enabled: '+str(args.touch_device) if touch else
+        print(('Touch enabled: SPI0.1 (REV B, polling)' if args.spi_touch else 'Touch enabled: '+str(args.touch_device)) if touch else
               'Use the Pi browser at http://127.0.0.1:8767/ to operate it. Touch is not configured yet.',flush=True)
         print('Ctrl+C stops the bridge and restores the previous home-screen program.',flush=True)
         next_frame=0

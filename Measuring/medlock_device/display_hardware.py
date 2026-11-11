@@ -48,7 +48,7 @@ class ILI9341Display:
 
 class EvdevTouch:
     """Single-tap-on-press input from an already configured ADS7846 device."""
-    def __init__(self, path, swap=False, invert_x=False, invert_y=False):
+    def __init__(self, path, swap=False, invert_x=False, invert_y=False, exclusive=False):
         import evdev
         self.codes=evdev.ecodes
         self.device=evdev.InputDevice(str(path))
@@ -57,6 +57,14 @@ class EvdevTouch:
         if self.xinfo is None or self.yinfo is None:
             self.device.close()
             raise ValueError('Select the touchscreen event device with ABS_X and ABS_Y axes.')
+        if self.xinfo.max<=self.xinfo.min or self.yinfo.max<=self.yinfo.min:
+            self.device.close()
+            raise ValueError('Touch input axes have invalid calibration ranges.')
+        if exclusive:
+            try:self.device.grab()
+            except Exception:
+                self.device.close()
+                raise
         self.swap,self.invert_x,self.invert_y=swap,invert_x,invert_y
         self.x=self.y=None
         self.pressed=self.sent=False

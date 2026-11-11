@@ -41,19 +41,23 @@ class TouchUI:
         self.help_return='ready'
         self.seated=False
         self.result={}
+        self.revision=0
         self.lock=threading.RLock()
 
     def snapshot(self):
         with self.lock:
             gpio=self.station.seat is not None
             return {'screen':self.screen,'seated':self.seated,'gpio':gpio,
+                    'revision':self.revision,
                     'step':1 if self.screen=='ready' or (self.screen=='help' and self.help_return=='ready') else 2,
                     'replay':self.station.camera.mode.startswith('photo replay'),
                     'buttons':buttons(self.screen,self.seated,gpio),
                     'result':dict(self.result)}
 
-    def action(self, action):
+    def action(self, action, expected_revision=None):
         with self.lock:
+            if expected_revision is not None and expected_revision!=self.revision:
+                return False
             allowed={b['action'] for b in buttons(self.screen,self.seated,self.station.seat is not None)}
             if action not in allowed:
                 return False
@@ -76,6 +80,7 @@ class TouchUI:
                 self.screen='details'
             elif action=='back':
                 self.screen='result'
+            self.revision+=1
             return True
 
     def _capture(self):
@@ -86,6 +91,7 @@ class TouchUI:
         with self.lock:
             self.result=result
             self.screen='result'
+            self.revision+=1
 
     def render(self):
         return render(self.snapshot(), self.station.preview)

@@ -107,6 +107,26 @@ The bridge checks the recorded constants before taking over and refuses other wi
 
 **Pin discrepancy to resolve:** the recorded home-screen script uses GPIO18 for the LCD backlight, while the report also assigns GPIO18 to the imaging backlight driver. Do not configure a second GPIO18 owner with `--light-pin 18` alongside this bridge. Reconcile the actual PCB wiring before separate lighting/sensor integration. The generic ILI9341/Blinka mode in the [touchscreen guide](Measuring/medlock_device/TOUCHSCREEN.md) is a different display owner and must not run at the same time.
 
+### 7. Enable touch on the little screen
+
+First identify the existing touch driver. Open a **second Terminal** so the working screen bridge can stay running, and copy this block:
+
+```sh
+cd "$HOME/MedLock/Measuring" &&
+git -C .. pull --ff-only &&
+python3 scripts/check_pi_touch.py
+```
+
+Send a photo of the output. This reports input names, access permissions, SPI driver names and relevant boot overlay settings. It does not read your keystrokes or modify wiring, drivers or boot settings.
+
+**Do not choose a random event device or guess GPIOs.** A keyboard/mouse event device is not the little touchscreen. If the output lists an ADS7846/XPT2046 device, we can enable that device and calibrate it. If no touch controller is configured, we still need its actual touch-CS and IRQ wiring; the LCD's working CS/DC/backlight settings do not identify those touch pins.
+
+The bridge now supports `--touch-device`, `--touch-swap`, `--touch-invert-x` and `--touch-invert-y`. Physical touch remains **unverified** until tested. Its evdev reader uses one action per press, maps coordinates into the same 320 × 240 button regions as the screen renderer, and rejects taps from an old screen revision.
+
+Once a device is confirmed, install `python3-evdev` with apt. Stop/relaunch the bridge and any older station backend so the new revision guard is active. Add the **confirmed** input device to the Step 6 launch command; we will supply that exact copyable command after reviewing the diagnostic output. Touch calibration flags depend on screen orientation. The bridge takes exclusive input ownership while running to prevent touchscreen taps from also clicking the HDMI desktop. Closing it releases that device.
+
+No touch overlay, kernel change, permission-group change or reboot is performed automatically. The setup for a missing ADS7846 driver must use the confirmed touch wiring, not the LCD reset/DC pins. The screen bridge continues to work in display-only mode without these touch arguments.
+
 ### Coming back later
 
 Open Terminal and change folders again:

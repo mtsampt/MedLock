@@ -38,7 +38,7 @@ def create_app(station):
     @app.post('/api/touch')
     def touch_action():
         body = request.get_json(silent=True) or {}
-        if not touch.action(body.get('action')):
+        if not touch.action(body.get('action'),expected_revision=body.get('expected_revision')):
             return jsonify(error='Action unavailable on this screen.'), 409
         return jsonify(touch.snapshot())
 

@@ -94,3 +94,12 @@ def test_help_returns_to_the_same_screen_without_clearing_result():
     result=ui.snapshot()['result']
     ui.action('help');ui.action('close_help')
     assert ui.snapshot()['screen']=='result' and ui.snapshot()['result']==result
+
+
+def test_api_rejects_a_touch_from_the_previous_screen():
+    client=create_app(FakeStation()).test_client()
+    state=client.get('/api/touch').get_json()
+    revision=state['revision']
+    assert client.post('/api/touch',json={'action':'seat','expected_revision':revision}).status_code==200
+    assert client.post('/api/touch',json={'action':'capture','expected_revision':revision}).status_code==409
+    assert client.get('/api/touch').get_json()['screen']=='ready'

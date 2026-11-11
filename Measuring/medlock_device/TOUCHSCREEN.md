@@ -16,7 +16,7 @@ The visual design follows the supplied patient-UI recording: white canvas, blue 
 
 ## Existing circuit home-screen bridge
 
-For the Pi shown in the November 11 recording, use [Step 6 of the main README](../../README.md#6-show-the-app-on-the-little-screen-recorded-pi-setup). It reuses `/home/medlock/medlock_home.py` with its recorded SPI0.0, GPIO22 DC, GPIO18 LCD backlight, and 8 MHz settings. It mirrors the same browser frames and does not require a reset-pin guess, Blinka or touch calibration. It enables LCD output only; use the Pi browser for input until physical input is configured. This new bridge is software-tested, not yet physically verified. The original file is not edited.
+For the Pi shown in the November 11 recording, use [Step 6 of the main README](../../README.md#6-show-the-app-on-the-little-screen-recorded-pi-setup). It reuses `/home/medlock/medlock_home.py` with its recorded SPI0.0, GPIO22 DC, GPIO18 LCD backlight, and 8 MHz settings. It mirrors the same browser frames and does not require a reset-pin guess, Blinka or touch calibration. By default it enables LCD output only. Optional `--touch-device` uses confirmed Linux touch input; start with [Step 7 diagnostics](../../README.md#7-enable-touch-on-the-little-screen) before selecting a device. This new bridge is software-tested, not yet physically verified. The original file is not edited.
 
 The report's imaging-backlight GPIO18 conflicts with using GPIO18 as the LCD backlight in the recorded script; confirm actual wiring before enabling any second owner of that pin.
 

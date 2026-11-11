@@ -1,5 +1,7 @@
 # MedLock Image Lab
 
+**Setting up the Raspberry Pi?** Start with the [copy-and-paste Pi instructions in the main README](../README.md#raspberry-pi-copy-and-paste-setup). The laptop training instructions below are separate from the Pi runtime.
+
 A local bench prototype for classifying **visible air / no visible air** in water-filled syringe photos. The first dataset contains 27 photos (18 air, 9 no visible air). The six previously ambiguous negatives use Matt's confirmation.
 
 ## Open the app

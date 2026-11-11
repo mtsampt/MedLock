@@ -8,9 +8,10 @@ import sys
 import time
 
 
-def read_adc(spi, command):
-    data = spi.xfer2([command, 0, 0])
-    return ((data[1] << 8) | data[2]) >> 3 & 4095
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+from medlock_device.spi_touch import read_burst
+from statistics import median
 
 
 def main():
@@ -22,7 +23,8 @@ def main():
             print(line,flush=True)
             log.write(line+'\n')
             log.flush()
-        report('MedLock touch diagnostic: SPI0.1 / BCM7 chip select / 500 kHz / mode0')
+        report('MedLock touch diagnostic v2: continuous-CS powered ADC burst')
+        report('SPI0.1 / BCM7 chip select / 500 kHz / mode0')
         report('Raw readings only. The little screen will not change during this check.')
         spi = spidev.SpiDev()
         try:
@@ -34,11 +36,8 @@ def main():
                           'RELEASE: lift your finger and leave the screen untouched'):
                 report('\n'+stage+' for 8 seconds')
                 for second in range(8):
-                    z1,z2 = read_adc(spi,0xB0),read_adc(spi,0xC0)
-                    read_adc(spi,0xD0)
-                    x = read_adc(spi,0xD0)
-                    read_adc(spi,0x90)
-                    y = read_adc(spi,0x90)
+                    z1,z2,xs,ys = read_burst(spi)
+                    x,y = median(xs),median(ys)
                     pressure = z1+4095-z2
                     gate = 0 < z1 < z2 < 4095 and pressure >= 300
                     report(f'{second+1}/8  X={x:4d} Y={y:4d} Z1={z1:4d} Z2={z2:4d} pressure={pressure:4d} pressure_gate={gate}')

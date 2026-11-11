@@ -10,6 +10,21 @@ from statistics import median
 import time
 
 
+def read_burst(spi):
+    """Keep CS low and the ADC powered throughout one pipelined sample.
+
+    Command/receive sequencing follows the XPT2046 serial protocol used by
+    PJRC's controller driver. First coordinate conversion is discarded;
+    the final command powers down after the last coordinate conversion.
+    Reference: github.com/PaulStoffregen/XPT2046_Touchscreen
+    """
+    data = spi.xfer2([0xB1,0,0xC1,0,0x91,0,0x91,0,0xD1,0,
+                      0x91,0,0xD1,0,0x91,0,0xD0,0,0])
+    def value(offset):
+        return ((data[offset] << 8) | data[offset+1]) >> 3 & 4095
+    return value(1),value(3),[value(i) for i in (7,11,15)],[value(i) for i in (9,13,17)]
+
+
 class SpiTouch:
     def __init__(self, calibration_path):
         import spidev
@@ -32,20 +47,8 @@ class SpiTouch:
         self.released = 0
         self.candidate = None
 
-    def adc(self, command):
-        data = self.spi.xfer2([command, 0, 0])
-        return ((data[1] << 8) | data[2]) >> 3 & 4095
-
     def sample(self):
-        # Separate complete transactions allow settling and keep LCD CS inactive.
-        z1, z2 = self.adc(0xB0), self.adc(0xC0)
-        if not (0 < z1 < z2 < 4095) or z1 + 4095 - z2 < 300:
-            return None
-        self.adc(0xD0)  # discard first coordinate after channel change
-        xs = [self.adc(0xD0) for _ in range(5)]
-        self.adc(0x90)
-        ys = [self.adc(0x90) for _ in range(5)]
-        z1, z2 = self.adc(0xB0), self.adc(0xC0)
+        z1,z2,xs,ys = read_burst(self.spi)
         if not (0 < z1 < z2 < 4095) or z1 + 4095 - z2 < 300:
             return None
         if max(xs)-min(xs) > 120 or max(ys)-min(ys) > 120:

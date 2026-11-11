@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from medlock_device.spi_touch import SpiTouch, fit_calibration, transform
+from medlock_device.spi_touch import SpiTouch, fit_calibration, transform, read_burst
 
 
 def test_rotated_inverted_calibration_and_bad_fourth_point():
@@ -23,15 +23,20 @@ def test_spi_transactions_and_disconnected_lines(monkeypatch,tmp_path):
     calls = []
     def transfer(data):
         calls.append(data)
-        value = {0xB0:800,0xC0:3000,0xD0:2000,0x90:1000}[data[0]]
-        return [0,(value<<3)>>8,(value<<3)&255]
+        reply = [0]*19
+        for offset,value in [(1,800),(3,3000),(5,4095),(7,2000),(9,1000),
+                             (11,2000),(13,1000),(15,2000),(17,1000)]:
+            reply[offset] = value>>5
+            reply[offset+1] = (value<<3)&255
+        return reply
     device = SimpleNamespace(open=lambda *a:None,close=lambda:None,xfer2=transfer)
     monkeypatch.setitem(sys.modules,'spidev',SimpleNamespace(SpiDev=lambda:device))
     touch = SpiTouch(tmp_path/'calibration.json')
     assert touch.sample() == (2000,1000)
     assert device.mode == 0 and device.max_speed_hz == 500_000
-    assert all(len(call)==3 and call[1:]==[0,0] for call in calls)
-    for reply in ([0,0,0],[255,255,255]):
+    assert len(calls)==1 and len(calls[0])==19
+    assert calls[0][::2] == [0xB1,0xC1,0x91,0x91,0xD1,0x91,0xD1,0x91,0xD0,0]
+    for reply in ([0]*19,[255]*19):
         device.xfer2 = lambda data:reply
         assert touch.sample() is None
 
@@ -47,3 +52,14 @@ def test_hold_and_short_noise_gap_do_not_repeat_action():
     actions = [touch.read_taps() for _ in range(12)]
     assert [i for i,v in enumerate(actions) if v] == [1,11]
     assert actions[1] == [(160,120)]
+
+
+def test_burst_preserves_axis_order_and_rejects_unstable_coordinates():
+    reply = [0]*19
+    for offset,value in [(1,800),(3,3000),(5,0),(7,2000),(9,1000),
+                         (11,2010),(13,1010),(15,2200),(17,1020)]:
+        reply[offset],reply[offset+1] = value>>5,(value<<3)&255
+    touch = SpiTouch.__new__(SpiTouch)
+    touch.spi = SimpleNamespace(xfer2=lambda tx:reply)
+    assert read_burst(touch.spi) == (800,3000,[2000,2010,2200],[1000,1010,1020])
+    assert touch.sample() is None

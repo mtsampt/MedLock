@@ -150,7 +150,7 @@ git -C .. pull --ff-only &&
 .venv/bin/python scripts/diagnose_spi_touch.py
 ```
 
-Watch the **terminal**. It gives three eight-second instructions: **HANDS OFF**, **PRESS** (hold the center of the little screen), then **RELEASE**. The LCD does not change during this diagnostic. Send a photo showing the readings from all three sections, or the saved `Measuring/outputs/touch-diagnostic.txt` file. These unfiltered X/Y/Z readings help distinguish communication problems from pressure filtering. Do not move or change wires for this check.
+Watch the **terminal**. It gives three eight-second instructions: **HANDS OFF**, **PRESS** (hold the center of the little screen), then **RELEASE**. The LCD does not change during this diagnostic. Send a photo showing the readings from all three sections, or the saved `Measuring/outputs/touch-diagnostic.txt` file. Diagnostic v2 uses one continuous-CS transaction with the ADC powered between conversions. It reports X/Y/Z values before the app pressure gate or stability filter, helping distinguish communication problems from filtering. The initial diagnostic showed X/Y changes on press but Z1/Z2 near zero; v2 tests whether maintaining ADC power and chip select resolves that sampling problem. This is not yet verified on hardware. Do not move or change wires for this check.
 
 The alternative `--touch-device /dev/input/eventX` remains available for hardware with a configured Linux touch input driver; it cannot be combined with `--spi-touch`. Its axis flags apply only to that evdev mode. The read-only `python3 scripts/check_pi_touch.py` helper can list input devices and SPI drivers if troubleshooting is needed.
 

@@ -140,6 +140,18 @@ cd "$HOME/MedLock/Measuring" &&
 
 If targets do not respond, send the exact terminal output. Do not add an `ads7846` overlay with a guessed IRQ pin: this board leaves that signal unconnected. The polling implementation filters unstable readings, requires consecutive samples and release between actions, and guards against taps on a stale UI revision. Pressure thresholds and responsiveness still need testing on the real controller. Calibration and mocked SPI tests do not establish physical operation.
 
+#### If touching the calibration targets does nothing
+
+Stop the bridge with **Ctrl+C** first so it does not read the controller at the same time. Run:
+
+```sh
+cd "$HOME/MedLock/Measuring" &&
+git -C .. pull --ff-only &&
+.venv/bin/python scripts/diagnose_spi_touch.py
+```
+
+Watch the **terminal**. It gives three eight-second instructions: **HANDS OFF**, **PRESS** (hold the center of the little screen), then **RELEASE**. The LCD does not change during this diagnostic. Send a photo showing the readings from all three sections, or the saved `Measuring/outputs/touch-diagnostic.txt` file. These unfiltered X/Y/Z readings help distinguish communication problems from pressure filtering. Do not move or change wires for this check.
+
 The alternative `--touch-device /dev/input/eventX` remains available for hardware with a configured Linux touch input driver; it cannot be combined with `--spi-touch`. Its axis flags apply only to that evdev mode. The read-only `python3 scripts/check_pi_touch.py` helper can list input devices and SPI drivers if troubleshooting is needed.
 
 Reference for XPT2046 pressure/position polling and optional IRQ: [PJRC controller implementation](https://github.com/PaulStoffregen/XPT2046_Touchscreen/blob/master/XPT2046_Touchscreen.cpp).

@@ -140,6 +140,38 @@ cd "$HOME/MedLock/Measuring" &&
 
 If targets do not respond, send the exact terminal output. Do not add an `ads7846` overlay with a guessed IRQ pin: this board leaves that signal unconnected. The polling implementation filters unstable readings, requires consecutive samples and release between actions, and guards against taps on a stale UI revision. Pressure thresholds and responsiveness still need testing on the real controller. Calibration and mocked SPI tests do not establish physical operation.
 
+#### Next software check: independent published touch driver
+
+After both MedLock sampling attempts failed to produce valid pressure, test a
+separate published implementation before concluding the hardware is faulty.
+The repository includes **XPT2046-asukiaaa-python 1.0.0** (MIT) with its touch
+logic unchanged and a small Linux SPI transport adapter. No new packages are
+needed. This is an independent comparison of touch logic, not an independent
+verification of the Pi's SPI stack or wiring.
+
+**Stop the screen bridge with Ctrl+C first**, then copy:
+
+```sh
+cd "$HOME/MedLock/Measuring" &&
+git -C .. pull --ff-only &&
+.venv/bin/python scripts/test_independent_touch.py
+```
+
+Watch the terminal. Follow the four six-second stages: **HANDS OFF**, **PRESS**
+(hold the center), **MOVE** (slide while pressing), then **RELEASE**. The little
+LCD stays unchanged. Send photos of all four sections, or the saved
+`Measuring/outputs/independent-touch.txt` file. This prints the library's raw
+counts and ranges without MedLock's pressure filter; changing numbers alone
+does not prove working touch. We need repeatable separation between untouched,
+pressed, moving, and released states before adapting the app. The published
+library uses different raw scaling from our earlier diagnostics.
+
+Upstream: [XPT2046-asukiaaa-python 1.0.0](https://pypi.org/project/XPT2046-asukiaaa-python/1.0.0/).
+Source, license, exact changes and pinned wheel hash are recorded in
+[third-party provenance](Measuring/third_party/xpt2046_asukiaaa/PROVENANCE.md).
+Physical operation with this driver is still unverified; a failed comparison
+alone would not prove the screen is defective.
+
 #### If touching the calibration targets does nothing
 
 Stop the bridge with **Ctrl+C** first so it does not read the controller at the same time. Run:

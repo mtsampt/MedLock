@@ -1,199 +1,264 @@
 # MedLock
 
-Syringe preparation camera checks and Raspberry Pi station software.
+Shared software and device-testing guide for the MedLock capstone team. Use this README to get code onto the Raspberry Pi and run your component. The components are **not yet one integrated application**.
 
-The camera measuring code, photos, datasets, trained models, and deployment artifacts are in [`Measuring/`](Measuring/). Run commands from that folder.
+## Start here: choose your component
 
-- [Pi: copy-and-paste instructions](#raspberry-pi-copy-and-paste-setup)
-- [Project setup and training lab](Measuring/README.md)
-- [Pi station setup](Measuring/medlock_device/README.md)
-- [320 × 240 touchscreen integration](Measuring/medlock_device/TOUCHSCREEN.md)
+| Component | Location | What can run today |
+| --- | --- | --- |
+| Acquisition | `Acquisition.py` | Python class with placeholder camera, volume, and air methods; no standalone application loop. |
+| State machine | `State Machine.py` | Python class for insertion, measuring, result, and error transitions; use the simulated smoke check below. |
+| Patient UI | `medlock-ui/` | React browser interface with mock outcomes; can be tested without camera or touch hardware. |
+| Measuring / camera | `Measuring/` | Optional saved-photo or real-camera air-classification demo, plus its own browser UI. Volume measurement is unfinished. |
+| Little LCD output | `Measuring/scripts/mirror_pi_display.py` | Displays the measuring app on the physical 320 × 240 LCD; demonstrated on this Pi. |
+| Physical touch | SPI touch scripts in `Measuring/scripts/` | **Work in progress:** touch readings are not reliable enough for button input. |
 
-The repository includes the collected dataset and a consistent SQLite snapshot. Virtual environments and temporary caches are excluded. The camera model is experimental; volume measurement and physical Pi/display validation remain unfinished.
+- [Pi: copy-and-paste setup](#raspberry-pi-copy-and-paste-setup)
+- [Python component testing](#3-test-python-components)
+- [Patient UI](#4-run-the-patient-ui-in-the-pis-browser)
+- [Optional camera demo](#5-optional-camera-demo)
+- [Little LCD output](#6-show-the-app-on-the-little-screen-recorded-pi-setup)
+- [Touchscreen — work in progress](#7-enable-touch-on-the-little-screen)
+- [Detailed measuring setup and diagnostics](docs/MEASURING_PI.md)
 
 ## Raspberry Pi: copy-and-paste setup
 
-**Open this README in the browser on the Raspberry Pi.** Each code block has a copy button at its top-right. Copy one block, click inside the Pi's Terminal, then **right-click → Paste** and press Enter on the on-screen keyboard. With a physical keyboard, Terminal paste is **Ctrl + Shift + V**. Wait for a block to finish before continuing. If a command reports an error, stop and send the error text or a photo.
+Open this README **in the browser on the Pi**. Use each code block's copy button, then right-click inside Terminal → **Paste** → Enter. Physical-keyboard Terminal paste is **Ctrl+Shift+V**. Each block below includes its working folder so it can be pasted from a fresh terminal.
 
-These steps run the camera measuring app in `Measuring/`. The separate team patient interface is in `medlock-ui/`; the two are not integrated yet. Keep the existing OS, circuit wiring, and boot display setup.
+Leave a program's terminal open while using it. **Ctrl+C** stops a foreground program; with the on-screen keyboard, press Ctrl, then C, then release Ctrl. Stop the previous copy before starting another one. If a command fails, keep its output and report it instead of continuing through later commands.
 
-### 1. Open the project folder and get the latest code
+### 1. Get or update the repository
 
-If you already cloned the repository into your home folder, copy this block:
+On this device the project lives at `/home/medlock/MedLock`. `$HOME/MedLock` also works if your Pi username differs.
 
-```sh
-cd "$HOME/MedLock/Measuring" && git -C .. pull --ff-only
-```
-
-If it says the folder does not exist, stop and tell us where you cloned it. If you have **not cloned it yet**, use this block instead:
+**Already cloned:** stop running tests before pulling updates, then run:
 
 ```sh
-cd "$HOME" && git clone https://github.com/mtsampt/MedLock.git && cd MedLock/Measuring
+cd "$HOME/MedLock" &&
+git status --short &&
+git pull --ff-only
 ```
 
-### 2. Install the Pi runtime
+If Git reports local edits or a conflict, keep those changes and coordinate with the author. Do not reset or delete a teammate's work to make a pull succeed.
 
-Copy the entire block. Installation needs internet and may take several minutes. A `sudo` prompt asks for the **Pi login password**; no characters appear as you type it.
+**First clone only:**
+
+```sh
+cd "$HOME" &&
+git clone https://github.com/mtsampt/MedLock.git &&
+cd MedLock
+```
+
+### 2. Prepare the shared Python runtime
+
+Run once, or when dependencies change. Installation needs internet. A `sudo` prompt asks for the Pi login password; typed password characters are not displayed.
 
 ```sh
 sudo apt update &&
-sudo apt install -y python3-venv python3-flask python3-numpy python3-pil python3-opencv python3-gpiozero rpicam-apps &&
-python3 -m venv --system-site-packages .venv
+sudo apt install -y git python3-venv python3-gpiozero python3-spidev python3-flask python3-numpy python3-pil python3-opencv rpicam-apps &&
+cd "$HOME/MedLock" &&
+python3 -m venv --system-site-packages Measuring/.venv
 ```
 
-Use the Pi runtime packages above, not the laptop `requirements.txt`, which also installs the much larger training stack. The Pi uses the committed model and does not need to train it.
+We reuse **`Measuring/.venv` as the shared Python environment** to stay compatible with the existing device setup. The filename/folder of your code can be elsewhere. Commands call this Python explicitly, so activating the environment is unnecessary. The acquisition/state-machine classes currently need only Python's standard library; GPIO tests additionally need their hardware packages.
 
-### 3. Check the camera
+Do not install `Measuring/requirements.txt` for basic device testing: it includes the laptop training stack. Install additional component dependencies only when the component owner identifies them. Keep the current OS, boot configuration, and wiring for these tests.
+
+### 3. Test Python components
+
+**Syntax check for the existing team files:**
 
 ```sh
-rpicam-hello --list-cameras
+cd "$HOME/MedLock" &&
+Measuring/.venv/bin/python -m py_compile Acquisition.py "State Machine.py"
 ```
 
-Expect a camera entry, normally mentioning `imx708` for Camera Module 3. If it says **No cameras available**, **command not found**, or another error, stop and send that output.
+No output means the syntax check passed. It does not test hardware or prove the code behaves correctly.
 
-Optionally take a test photo:
+**Important current integration issue:** `State Machine.py` imports lowercase `acquisition`, but the committed file is named uppercase `Acquisition.py`. Linux filenames are case-sensitive. Also, both files define classes without an application entry point, so running either file alone will not open a screen or start a continuous sensor test. The component owner still needs to supply the real runner and align the import/filename.
+
+**Optional simulated state-machine smoke check:** this temporary import alias handles the current filename mismatch without renaming or editing team files. It uses a fake acquisition object and does not access the camera, GPIO, or model. The printed volume and air values are fabricated test inputs.
 
 ```sh
+cd "$HOME/MedLock" &&
+Measuring/.venv/bin/python - <<'PY'
+import importlib.util
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def load(name, filename):
+    spec = importlib.util.spec_from_file_location(name, Path(filename))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+acquisition = load("acquisition", "Acquisition.py")
+state_machine = load("medlock_team_state_machine", "State Machine.py")
+
+
+class FakeAcquisition:
+    seated = False
+
+    def read_seat_sensor(self):
+        return self.seated
+
+    def acquire(self):
+        return acquisition.Measurement(
+            volume_ml=1.0, air_detected=False,
+            syringe_seated=True, valid=True,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+
+
+fake = FakeAcquisition()
+machine = state_machine.StateMachine(
+    fake,
+    on_state_change=lambda old, new: print(old.name, "->", new.name),
+    on_measurement=lambda reading: print("SIMULATED measurement:", reading),
+)
+fake.seated = True
+machine.tick()
+machine.request_measurement()
+machine.acknowledge()
+fake.seated = False
+machine.tick()
+machine.shutdown()
+assert machine.state is state_machine.State.SHUTDOWN
+print("Simulated smoke check finished. No hardware was tested.")
+PY
+```
+
+Expect `IDLE -> SEATED -> MEASURING -> RESULT`, then acknowledgement returns to `SEATED`, removal returns to `IDLE`, and shutdown reaches `SHUTDOWN`. This covers the simulated happy path only; test error handling and real sensor behavior separately.
+
+For a teammate's **new standalone Python runner**, run it from the repository root using the shared interpreter. Replace the example filename below with the actual runner; this is a template, not an existing file:
+
+```sh
+cd "$HOME/MedLock" &&
+Measuring/.venv/bin/python "path/to/your_runner.py"
+```
+
+Have each component owner document the exact entry point, dependencies, GPIO polarity, and expected output before someone else runs their hardware test.
+
+### 4. Run the patient UI in the Pi's browser
+
+This is the separate React interface in `medlock-ui/`, not the measuring app. Install its runtime once:
+
+```sh
+sudo apt update &&
+sudo apt install -y nodejs npm &&
+node --version &&
+npm --version
+```
+
+The committed Vite 5 toolchain requires Node 18 or newer. If npm reports an unsupported Node version, resolve that before proceeding.
+
+Start the UI:
+
+```sh
+cd "$HOME/MedLock/medlock-ui" &&
+npm ci &&
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+Open [the patient UI on this Pi](http://127.0.0.1:5173/) **in the Pi's browser**. Keep its terminal open. With no `VITE_API_URL` configured, the dev panel lets you choose mock **pass / fix / unable** results and navigate the screens. These results are simulated; they do not come from the sensors or measuring model. No camera or physical touchscreen is required; use the mouse.
+
+If `VITE_API_URL` is set in your environment or local `.env` files, the UI instead tries that backend. The UI expects `GET /supplies`, `POST /check`, and `POST /log`, described in [`medlock-ui/src/api.js`](medlock-ui/src/api.js). The current measuring server at port 8767 has a different API. **Pointing the React UI at 8767 does not integrate them.** No matching standalone FastAPI server is currently committed.
+
+This command displays the UI on the desktop/browser screen. It does **not** send React screens to the little SPI LCD. The existing LCD bridge mirrors only the measuring app's rendered frames. See the [patient UI guide](medlock-ui/README.md) for its own build/preview instructions.
+
+### 5. Optional camera demo
+
+Skip this section if you are testing another component. Stop any program currently capturing from the camera before running either demo.
+
+**Camera-only check — no model or browser needed:**
+
+```sh
+rpicam-hello --list-cameras &&
 rpicam-still --nopreview --timeout 2000 --output "$HOME/medlock-camera-test.jpg"
 ```
 
-Open **File Manager → Home → medlock-camera-test.jpg** to inspect it. If the camera is busy, another app may already be using it; report that rather than killing an unknown process.
+Expect a camera listing, normally `imx708`, followed by a saved photo at **`/home/medlock/medlock-camera-test.jpg`** on this device. Open it using File Manager → Home. This command captures a still photo and exits; it does not open the MedLock UI or drive the little LCD.
 
-### 4. First run: test with saved photos
-
-This checks that the model and interface run on the Pi before using the camera:
+**Optional model demo using the real camera:**
 
 ```sh
-.venv/bin/python -m medlock_device --bundle outputs/pi-bundle --replay outputs/medlock-pilot-2026-10-21/images
-```
-
-Leave that Terminal open. **In the Pi's browser**, click [Open MedLock on this Pi](http://127.0.0.1:8767/). This address opens the app on whichever computer's browser you use; clicking it on your Mac opens the Mac's app, not the Pi's.
-
-Tap **Seat (demo)**, then **Check syringe**. The first run uses saved photos and simulated seating. The small SPI display is not activated by this command.
-
-### 5. Run with the actual camera
-
-Stop the saved-photo app first. With a physical keyboard, press **Ctrl + C** in its Terminal. With the on-screen keyboard, use its **Ctrl** key and then **C** (release Ctrl afterwards). If that does not stop the app, ask for help before starting another copy.
-
-From the same `Measuring` folder, run:
-
-```sh
+cd "$HOME/MedLock/Measuring" &&
 .venv/bin/python -m medlock_device --bundle outputs/pi-bundle --rotation 90
 ```
 
-Refresh [MedLock on this Pi](http://127.0.0.1:8767/) in the Pi's browser. It now captures from the real camera. Seating is still simulated until the seat sensor is configured. Review the cropped image under **Details**.
+Open [the measuring demo on this Pi](http://127.0.0.1:8767/) in the Pi's browser. Click **Seat (demo)**, then **Check syringe**. Seat status is simulated in this command. It captures a real image and runs the experimental air classifier; it does not measure liquid volume. Check the crop under **Details**. Rotation 90 is the current mounting choice; the crop expects plunger up and tip down.
 
-`--rotation 90` rotates the captured image counterclockwise. Choose `270` for the opposite mounting, or `0` if the image is already upright. The current crop algorithm requires **plunger at the top, tip at the bottom**, with the whole barrel visible. Different lighting and camera geometry can affect predictions; this first run is a hardware/function check, not an accuracy validation.
+**No camera available? Use saved photos instead**, after stopping the real-camera demo:
+
+```sh
+cd "$HOME/MedLock/Measuring" &&
+.venv/bin/python -m medlock_device --bundle outputs/pi-bundle --replay outputs/medlock-pilot-2026-10-21/images
+```
+
+Use the same port-8767 browser page. Camera capture, model inference, and GPIO validity are different checks; a successful demo is not a validation of dose or injection readiness.
 
 ### 6. Show the app on the little screen (recorded Pi setup)
 
-The recorded `/home/medlock/medlock_home.py` program already drives the LCD using **SPI0.0, GPIO22 (data/command), GPIO18 (screen backlight), 8 MHz SPI, and a 320 × 240 frame**. A bridge now reuses that file's existing `command`, `init_lcd`, and `display_image` functions without modifying it. The user has confirmed this bridge displays the app on the physical LCD.
-
-Copy this whole block into the Pi's Terminal. It updates the code, starts the camera app if necessary, temporarily stops the exact home-screen program, and mirrors the station to the small screen:
+**LCD output works on the assembled Pi; physical touch does not yet work reliably.** This command shows the measuring app, not the separate React patient UI:
 
 ```sh
 cd "$HOME/MedLock/Measuring" &&
-git -C .. pull --ff-only &&
 .venv/bin/python scripts/mirror_pi_display.py --start-app --take-over
 ```
 
-If an earlier Step 4/5 app is already running, the bridge mirrors that existing app (including its current photo-replay/camera mode). If none is running, it starts real-camera mode with image rotation 90. To start with saved photos instead, add `--replay` to the last command. Stop a currently running Terminal app with Ctrl+C first if you want this command to choose a different mode.
+The bridge reuses `/home/medlock/medlock_home.py`'s display functions without editing that file. It temporarily stops that exact home-screen program and starts the measuring backend if needed. If a backend is already running on 8767, it mirrors that app's existing mode. Otherwise it starts real-camera mode. Add `--replay` to start with saved photos when no backend is running.
 
-**Operate it from the Pi's browser** at [http://127.0.0.1:8767/](http://127.0.0.1:8767/): tap Seat (demo), Check syringe, Details, etc. The same screens should appear on the little LCD. **This enables screen output, not physical touch or rotary-encoder input.** Those still need their input configuration. Seating remains simulated.
+Operate the app from the Pi's browser at [127.0.0.1:8767](http://127.0.0.1:8767/) while watching the little LCD. Keep the terminal open. Ctrl+C stops the bridge, releases resources, and restarts the original home-screen script if the bridge stopped it. A separately started backend must be stopped in its own terminal. Do not run another LCD/SPI0.0 writer alongside the bridge.
 
-Leave the bridge Terminal open. Ctrl+C closes its display resources and restarts the original home-screen script if the bridge stopped it. The original file and boot configuration are unchanged. If the home-screen program automatically respawns or the script reports a GPIO conflict, send the exact error rather than stopping other services.
-
-The bridge checks the recorded constants before taking over and refuses other wiring. It needs `spidev` and `gpiozero`, already used by the working home screen. If Python reports missing `spidev`, install the distro package with `sudo apt install -y python3-spidev` and retry using the system-packages virtual environment from Step 2.
-
-**Pin discrepancy to resolve:** the recorded home-screen script uses GPIO18 for the LCD backlight, while the report also assigns GPIO18 to the imaging backlight driver. Do not configure a second GPIO18 owner with `--light-pin 18` alongside this bridge. Reconcile the actual PCB wiring before separate lighting/sensor integration. The generic ILI9341/Blinka mode in the [touchscreen guide](Measuring/medlock_device/TOUCHSCREEN.md) is a different display owner and must not run at the same time.
+This bridge expects the recorded startup file and constants: 320 × 240, SPI0.0, D/C GPIO22, and GPIO18 output enabled. It is **not a generic launcher for every teammate's UI**.
 
 ### 7. Enable touch on the little screen
 
-The supplied **MedLock REV B Gerbers** contain electrical net attributes confirming this wiring:
+**WORK IN PROGRESS — not a working-touch setup. Status: November 11, 2026.** LCD graphics work, but our polling driver and a separate published-driver comparison have not produced reliable two-axis position/pressure readings. Horizontal and vertical movement have both been tried. The cause is unresolved; these tests do not prove a hardware defect.
 
-| Display signal | J2 pad | Pi connection |
+Use a mouse with the Pi browser for team testing tomorrow. Touch is not a prerequisite for testing acquisition, state-machine logic, or the React mock UI. Do not add `--spi-touch` to the normal LCD launch while trying to test unrelated components: it may stay in calibration until it times out.
+
+The supplied REV B design routes touch CS to **BCM7 / physical pin26**, clock to **BCM11 / pin23**, DIN to **BCM10 / pin19**, and DO to **BCM9 / pin21**. J2 pad14 / T_IRQ is unconnected, so the diagnostic software polls without an IRQ. Actual continuity, controller power/ground, and the touch-panel connection still need checking by the hardware owner.
+
+The calibration commands, diagnostic commands, logs and controller sources are retained in the [detailed measuring/touch guide](docs/MEASURING_PI.md#7-enable-touch-on-the-little-screen). They are troubleshooting tools, not a confirmed repair. Stop any touch reader before running another one. No boot overlay, rewiring, or reboot is required by the current polling test commands.
+
+## Shared hardware: avoid resource conflicts
+
+Use **BCM GPIO numbers in Python**; physical header numbers identify positions on the connector. They are different numbering systems.
+
+| Resource | Design / current software | Testing rule |
 | --- | --- | --- |
-| T_CS | 11 | BCM GPIO7 / physical pin26 / SPI0.1 |
-| T_CLK | 10 | BCM GPIO11 / physical pin23 |
-| T_DIN | 12 | BCM GPIO10 / physical pin19 |
-| T_DO | 13 | BCM GPIO9 / physical pin21 |
-| T_IRQ | 14 | **Unconnected on the PCB** |
+| CSI camera | Camera Module 3; `rpicam-still` used by measuring | One capture owner at a time. Stop measuring before a teammate's camera capture test. |
+| SPI0 bus | GPIO10 MOSI, GPIO9 MISO, GPIO11 clock | LCD and touch share the bus on different chip selects; coordinate ownership and settings. |
+| LCD chip select / D/C | GPIO8 (physical24) / GPIO22 (physical15) | One LCD writer at a time; preserve the known working startup driver. |
+| Touch chip select | GPIO7 (physical26), SPI0.1 | One touch reader at a time; touch remains WIP. |
+| GPIO18 (physical12) | PCB labels it `BACKLIGHT_CTRL`; startup LCD code also claims it | Do not let separate lighting and display programs claim it simultaneously. The LCD module's LED feed is separate in the schematic; the startup variable name does not establish what GPIO18 physically illuminates. |
+| Seat input | GPIO17 (physical11), named `HALL_OUT` in the supplied schematic | Confirm assembled sensor type and polarity with hardware owner. The measuring CLI's `--seat-pin` assumes active-low; do not assume that matches this board. Default measuring launches simulate seating. |
+| Encoder | GPIO5 / GPIO6 rotation, GPIO13 push | Pin assignments appear in the design; reader/polarity/debounce integration must be supplied and tested by the component owner. |
 
-The app can **poll the XPT2046 directly over SPI**, checking pressure and position without an IRQ wire. It uses the existing `/dev/spidev0.1`; no wiring change, kernel overlay, evdev package or reboot is needed for this mode. This applies to the supplied REV B layout and matching harness; board revisions or hand modifications require rechecking. Physical touch and calibration remain **unverified until tested on the Pi**.
+For hardware pin changes or continuity tests, disconnect power first. Avoid disabling boot services or changing wiring simply to resolve a software conflict; identify the resource owner first.
 
-Stop the currently running bridge with **Ctrl+C**. Also stop any earlier camera backend in its own Terminal so the updated backend can start. Copy this block:
+## Troubleshooting and handing off a test
 
-```sh
-cd "$HOME/MedLock/Measuring" &&
-git -C .. pull --ff-only &&
-.venv/bin/python scripts/mirror_pi_display.py --start-app --take-over --spi-touch
-```
+- **Nothing opens after a Python command:** class-only files may simply exit; a web server prints its URL but still needs the browser opened manually.
+- **Page will not load:** keep the server terminal open and use its exact port. Patient UI: 5173. Measuring: 8767. `127.0.0.1` always means the computer running that browser, so open these links on the Pi.
+- **Address already in use / old backend revision:** stop the earlier server with Ctrl+C in its own terminal, then restart the updated one. A second launch does not replace an old process.
+- **Camera busy / GPIO already claimed:** stop the known program holding it. Do not kill unknown services or launch more copies.
+- **Import error for acquisition:** the current uppercase/lowercase mismatch is documented in Step 3. The smoke check's alias is not a permanent integration fix.
+- **Module not found:** use `Measuring/.venv/bin/python` and the working folder shown in the command. Ask the component owner for any missing dependency.
 
-On first launch, the little screen shows **four blue + targets**, one at a time. Press each center gently for about half a second, then lift. A blunt plastic stylus can help; avoid sharp objects. The fourth point checks the calibration before saving it to `Measuring/outputs/touch-calibration.json`. The app then appears. Try **Help**, **Back**, **Seat (demo)** and **Check syringe**. Seating is still simulated in this launch mode. This controls MedLock on the little screen; it does not add touch to the HDMI desktop.
+For a useful handoff, record: the Git commit (`git rev-parse --short HEAD`), command, simulated versus physical inputs, expected behavior, actual output, and whether you stopped the program. Leave the Pi in a known state and keep diagnostic logs. Internet is needed for Git/package downloads; the local demo pages do not require an internet connection once installed.
 
-Later launches reuse calibration. To repeat setup:
+## More project documentation
 
-```sh
-cd "$HOME/MedLock/Measuring" &&
-.venv/bin/python scripts/mirror_pi_display.py --start-app --take-over --spi-touch --calibrate-touch
-```
+- [Detailed measuring Pi setup and touch diagnostics](docs/MEASURING_PI.md)
+- [Measuring project / training lab](Measuring/README.md)
+- [Measuring device runtime](Measuring/medlock_device/README.md)
+- [Generic display adapter notes](Measuring/medlock_device/TOUCHSCREEN.md) — separate from the proven startup-driver bridge
+- [Patient UI](medlock-ui/README.md)
 
-If targets do not respond, send the exact terminal output. Do not add an `ads7846` overlay with a guessed IRQ pin: this board leaves that signal unconnected. The polling implementation filters unstable readings, requires consecutive samples and release between actions, and guards against taps on a stale UI revision. Pressure thresholds and responsiveness still need testing on the real controller. Calibration and mocked SPI tests do not establish physical operation.
-
-#### Next software check: independent published touch driver
-
-After both MedLock sampling attempts failed to produce valid pressure, test a
-separate published implementation before concluding the hardware is faulty.
-The repository includes **XPT2046-asukiaaa-python 1.0.0** (MIT) with its touch
-logic unchanged and a small Linux SPI transport adapter. No new packages are
-needed. This is an independent comparison of touch logic, not an independent
-verification of the Pi's SPI stack or wiring.
-
-**Stop the screen bridge with Ctrl+C first**, then copy:
-
-```sh
-cd "$HOME/MedLock/Measuring" &&
-git -C .. pull --ff-only &&
-.venv/bin/python scripts/test_independent_touch.py
-```
-
-Watch the terminal. Follow the four six-second stages: **HANDS OFF**, **PRESS**
-(hold the center), **MOVE** (slide while pressing), then **RELEASE**. The little
-LCD stays unchanged. Send photos of all four sections, or the saved
-`Measuring/outputs/independent-touch.txt` file. This prints the library's raw
-counts and ranges without MedLock's pressure filter; changing numbers alone
-does not prove working touch. We need repeatable separation between untouched,
-pressed, moving, and released states before adapting the app. The published
-library uses different raw scaling from our earlier diagnostics.
-
-Upstream: [XPT2046-asukiaaa-python 1.0.0](https://pypi.org/project/XPT2046-asukiaaa-python/1.0.0/).
-Source, license, exact changes and pinned wheel hash are recorded in
-[third-party provenance](Measuring/third_party/xpt2046_asukiaaa/PROVENANCE.md).
-Physical operation with this driver is still unverified; a failed comparison
-alone would not prove the screen is defective.
-
-#### If touching the calibration targets does nothing
-
-Stop the bridge with **Ctrl+C** first so it does not read the controller at the same time. Run:
-
-```sh
-cd "$HOME/MedLock/Measuring" &&
-git -C .. pull --ff-only &&
-.venv/bin/python scripts/diagnose_spi_touch.py
-```
-
-Watch the **terminal**. It gives three eight-second instructions: **HANDS OFF**, **PRESS** (hold the center of the little screen), then **RELEASE**. The LCD does not change during this diagnostic. Send a photo showing the readings from all three sections, or the saved `Measuring/outputs/touch-diagnostic.txt` file. Diagnostic v2 uses one continuous-CS transaction with the ADC powered between conversions. It reports X/Y/Z values before the app pressure gate or stability filter, helping distinguish communication problems from filtering. The initial diagnostic showed X/Y changes on press but Z1/Z2 near zero; v2 tests whether maintaining ADC power and chip select resolves that sampling problem. This is not yet verified on hardware. Do not move or change wires for this check.
-
-The alternative `--touch-device /dev/input/eventX` remains available for hardware with a configured Linux touch input driver; it cannot be combined with `--spi-touch`. Its axis flags apply only to that evdev mode. The read-only `python3 scripts/check_pi_touch.py` helper can list input devices and SPI drivers if troubleshooting is needed.
-
-Reference for XPT2046 pressure/position polling and optional IRQ: [PJRC controller implementation](https://github.com/PaulStoffregen/XPT2046_Touchscreen/blob/master/XPT2046_Touchscreen.cpp).
-
-### Coming back later
-
-Open Terminal and change folders again:
-
-```sh
-cd "$HOME/MedLock/Measuring"
-```
-
-Then rerun the saved-photo or real-camera command above. Reinstalling packages is not normally needed. For software updates, stop the app and run `git pull --ff-only` from the repository; report any local-change conflict rather than discarding it.
+The repository includes local photos, datasets, model files, and a SQLite snapshot. Virtual environments and caches are excluded. All demos remain capstone prototypes; mock results and model outputs are not clinical validation.

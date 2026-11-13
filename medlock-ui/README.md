@@ -1,54 +1,42 @@
 # MedLock station UI
 
-Patient-facing touchscreen UI for the MedLock IVF medication-preparation station (Pregnyl trigger shot flow). React + Vite, sized for a 320×240 2.8" display (landscape).
+Patient UI for the MedLock station, sized for the 2.8" screen (320×240).
 
-## Run it
+## Run it on a laptop
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:5173. The screen is shown at its real 1:1 size (320×240); use browser zoom (⌘+) to inspect it on a laptop. With no backend configured, a **dev panel** appears next to the screen. Use it to jump between screens and choose what the next syringe check returns (pass / fix / unable).
+Open http://localhost:5173. The panel next to the screen lets you jump between screens and pick the syringe check result (pass / fix / unable).
 
-## Connect the real backend
+## Run it on the Pi's 2.8" screen
 
-Create a `.env` file:
+The Pi plays pictures of each screen that were recorded on a laptop. The knob works like the real UI: turn to move, press to select. Results are practice results, not the camera.
 
+```bash
+cd ~/MedLock/medlock-ui
+python3 pi/show_frames.py --take-over --still pi/frames/pass/000.png   # screen test: one picture
+python3 pi/show_frames.py --take-over                                  # whole flow with the knob
 ```
-VITE_API_URL=http://<pi-or-laptop-ip>:8000
-```
 
-The dev panel hides itself and the UI calls the FastAPI server instead. The expected endpoints are documented at the top of `src/api.js`. Agree on that contract with whoever owns the backend before either side builds too far.
+Ctrl+C stops it and brings back the normal home screen.
 
-## Where things live
-
-| File | What it is |
+| Option | Use it when |
 |---|---|
-| `src/protocol.js` | Medication, supplies, and prep steps as data. Edit steps here, not in screens. |
-| `src/api.js` | The only file that talks to the backend. Also holds the mock. |
-| `src/App.jsx` | The screen flow (which screen comes next). |
-| `src/components/Frame.jsx` | Shared layout: progress bar, Help, Back, primary button. |
-| `src/screens/` | One file per screen. |
-| `src/styles.css` | All styling. Colors and sizes are tokens at the top. |
+| `--verdict fix` / `--verdict unable` | Show the other result screens |
+| `--reverse` | The knob turns the wrong way |
+| `--button-active-high` | Pressing the knob does nothing |
+| `--keys` | Use the keyboard instead: `n` next, `p` back, Enter select, `q` quit |
 
-## Design rules built in
+## After changing the UI
 
-- One action per screen; progress shown as "Step X of N".
-- The patient confirms each supply (Yes / No), one item at a time.
-- Touch targets at least 48px tall (Help 44px).
-- Every result uses color + symbol + text.
-- "Needs a fix" always says what to do, and loops back to the syringe check.
-- Any backend error or unknown response shows "Couldn't check," never a pass.
-
-## Running on the Pi
+Re-record the pictures on a laptop with Google Chrome and Python (Pillow + NumPy):
 
 ```bash
 npm run build
-npx vite preview --host
-chromium-browser --kiosk --force-device-scale-factor=1 http://localhost:4173
+python3 pi/record_frames.py      # takes about 30 min
 ```
 
-## Before using with anyone
-
-The prep steps in `protocol.js` are placeholders for a simulated training prototype. Confirm the real sequence and volumes with your clinician contact.
+Then copy `dist/` and `pi/` to `~/MedLock/medlock-ui` on the Pi.

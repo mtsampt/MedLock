@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import Frame from '../components/Frame.jsx'
+import Frame, { useResetFocus } from '../components/Frame.jsx'
 import { PROTOCOL } from '../protocol.js'
 
 // The patient confirms each supply themselves, one item per screen.
@@ -10,6 +10,7 @@ const ITEMS = PROTOCOL.supplies
 export default function Supplies({ onContinue, ...frame }) {
   const [index, setIndex] = useState(0) // ITEMS.length means every item is confirmed
   const [missing, setMissing] = useState(false)
+  useResetFocus([index, missing])
   const item = ITEMS[index]
 
   const have = () => {

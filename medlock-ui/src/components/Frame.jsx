@@ -1,3 +1,14 @@
+import { useEffect } from 'react'
+
+// When the screen changes, move the knob/keyboard starting point back to the
+// top of the device, so the next turn always lands on Help, then the body
+// buttons, then the footer. (blur() alone keeps the old starting point.)
+export function useResetFocus(deps) {
+  useEffect(() => {
+    document.querySelector('.device')?.focus({ preventScroll: true })
+  }, deps) // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 // Shared layout for every screen: progress bar on top, Help top-right,
 // one instruction in the middle, Back bottom-left, primary action bottom-right.
 

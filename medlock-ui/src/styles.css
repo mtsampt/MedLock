@@ -49,6 +49,8 @@ body { margin: 0; background: var(--bg); }
 }
 
 /* ---- Frame ---- */
+.screen { height: 100%; }
+.device:focus { outline: none; }
 .frame { display: flex; flex-direction: column; gap: 4px; height: 100%; padding: var(--pad); }
 .frame-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; }
 /* Screens are sized not to scroll; overflow is a safety net for long backend text. */
@@ -83,6 +85,10 @@ body { margin: 0; background: var(--bg); }
 }
 .btn:active:not(:disabled) { transform: scale(0.97); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Highlight for the knob (it sends Tab / Enter). Drawn inside the button so
+   it is never clipped; touch taps don't show it. */
+.btn:focus-visible { outline: 3px solid var(--ink); outline-offset: -6px; }
+.btn-primary:focus-visible { outline-color: var(--accent-ink); }
 .btn-primary { background: var(--accent); color: var(--accent-ink); flex: 1; max-width: 200px; box-shadow: 0 3px 8px rgba(47, 91, 211, 0.3); }
 .btn-primary:disabled { box-shadow: none; }
 .btn-secondary { background: var(--surface-2); color: var(--ink); }

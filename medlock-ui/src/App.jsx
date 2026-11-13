@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useResetFocus } from './components/Frame.jsx'
 import { PROTOCOL } from './protocol.js'
 import { logEvent } from './api.js'
 import Start from './screens/Start.jsx'
@@ -25,6 +26,7 @@ export default function App() {
   const [index, setIndex] = useState(0)
   const [result, setResult] = useState(null) // last syringe check result
   const [helpOpen, setHelpOpen] = useState(false)
+  useResetFocus([index, result, helpOpen])
 
   const screen = FLOW[index]
   const next = () => setIndex((i) => Math.min(i + 1, FLOW.length - 1))
@@ -72,8 +74,9 @@ export default function App() {
 
   return (
     <div className="stage">
-      <div className="device">
-        {content}
+      <div className="device" tabIndex={-1}>
+        {/* inert while Help is open, so the knob only reaches Help's buttons */}
+        <div className="screen" inert={helpOpen ? '' : undefined}>{content}</div>
         {helpOpen && <HelpOverlay onClose={() => setHelpOpen(false)} />}
       </div>
       {!import.meta.env.VITE_API_URL && (

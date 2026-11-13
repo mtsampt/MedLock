@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import Frame from '../components/Frame.jsx'
+import Frame, { useResetFocus } from '../components/Frame.jsx'
 import { logEvent } from '../api.js'
 
 export default function Done({ onFinish, ...frame }) {
   const [answer, setAnswer] = useState(null) // { injected: bool, at: Date }
+  useResetFocus([answer])
 
   const record = (injected) => {
     const at = new Date()

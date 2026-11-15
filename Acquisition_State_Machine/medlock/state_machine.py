@@ -12,7 +12,7 @@ from enum import Enum, auto
 from typing import Callable, Optional
 import logging
 
-from acquisition import Acquisition, Measurement
+from .acquisition import Acquisition, Measurement
 
 logger = logging.getLogger(__name__)
 
@@ -174,3 +174,4 @@ class StateMachine:
 
     def shutdown(self):
         self.handle(Event.SHUTDOWN_REQUESTED)
+

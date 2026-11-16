@@ -118,7 +118,21 @@ def forward_tap(url,state,x,y):
     return False
 
 
-def main():
+def paint_frame(frame,state,knob,show,previous):
+    """Publish input state only AFTER its frame is visible; retain redraw input.
+
+    GPIO callbacks continue to enqueue against the last visible revision while
+    SPI is busy. A focus-only redraw preserves those events. A screen change
+    invalidates old-revision events when the next frame is committed.
+    """
+    image=knob.draw(frame,state) if knob else frame
+    pixels=image.tobytes()
+    if pixels!=previous:show(image)
+    if knob:knob.sync(state)
+    return pixels
+
+
+def parse_args(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--driver',type=Path,default=Path('/home/medlock/medlock_home.py'))
     parser.add_argument('--start-app',action='store_true',help='Start the local camera app if it is not running')
@@ -128,7 +142,8 @@ def main():
     group=parser.add_mutually_exclusive_group()
     group.add_argument('--touch-device',type=Path,help='Confirmed ADS7846/XPT2046 /dev/input/eventX')
     group.add_argument('--spi-touch',action='store_true',help='REV B XPT2046 on SPI0.1; IRQ not connected')
-    group.add_argument('--knob',action='store_true',help='Use medlock-ui/pi/knob.py for direct LCD button navigation')
+    group.add_argument('--knob',action='store_true',help='Use shared knob.py controls (default)')
+    group.add_argument('--no-knob',action='store_true',help='Display/browser-only mode without claiming encoder pins')
     parser.add_argument('--knob-a',type=int,default=5)
     parser.add_argument('--knob-b',type=int,default=6)
     parser.add_argument('--knob-button',type=int,default=13)
@@ -139,9 +154,15 @@ def main():
     parser.add_argument('--touch-swap',action='store_true')
     parser.add_argument('--touch-invert-x',action='store_true')
     parser.add_argument('--touch-invert-y',action='store_true')
-    args=parser.parse_args()
+    args=parser.parse_args(argv)
+    args.knob=args.knob or not (args.no_knob or args.touch_device or args.spi_touch)
     if args.calibrate_touch and not args.spi_touch:parser.error('--calibrate-touch requires --spi-touch')
-    if sys.platform!='linux':parser.error('Run this bridge on the Raspberry Pi, not the Mac.')
+    return args
+
+
+def main():
+    args=parse_args()
+    if sys.platform!='linux':raise RuntimeError('Run this bridge on the Raspberry Pi, not the Mac.')
     code,constants=extract_functions(args.driver.read_text())
     frame_url='http://127.0.0.1:8767/api/touch/frame'
     state_url='http://127.0.0.1:8767/api/touch'
@@ -208,6 +229,8 @@ def main():
         print('Ctrl+C stops the bridge and restores the previous home-screen program.',flush=True)
         next_frame=0
         frame=first_frame
+        next_status=0
+        last_status=None
         while True:
             if time.monotonic()>=next_frame:
                 before=read_state(state_url)
@@ -215,9 +238,15 @@ def main():
                 after=read_state(state_url)
                 # Only accept taps on a frame paired with stable button state.
                 shown_state=before if before==after else None
-                if knob:knob.sync(shown_state)
                 next_frame=time.monotonic()+.3
+            previous=paint_frame(frame,shown_state,knob,namespace['display_image'],previous)
             if knob:
+                if time.monotonic()>=next_status:
+                    status=knob.status()
+                    if status!=last_status:
+                        print(f"Knob input: {status}",flush=True)
+                        last_status=status
+                    next_status=time.monotonic()+2
                 pressed=knob.read()
                 if pressed is not None:
                     state,button=pressed
@@ -231,16 +260,7 @@ def main():
                         shown_state=None
                         next_frame=0
                         break
-            display_frame=knob.draw(frame) if knob else frame
-            pixels=display_frame.tobytes()
-            if pixels!=previous:
-                # Ignore GPIO input during SPI redraw so actions target visible screens.
-                visible=knob.state if knob else None
-                if knob:knob.state=None
-                try:namespace['display_image'](display_frame)
-                finally:
-                    if knob:knob.state=visible
-                previous=pixels
+            previous=paint_frame(frame,shown_state,knob,namespace['display_image'],previous)
             time.sleep(.03 if (touch or knob) else .1)
     finally:
         if knob is not None:knob.close()

@@ -5,6 +5,8 @@ from pathlib import Path
 
 from PIL import ImageDraw
 
+_VISIBLE = object()
+
 
 def load_knob():
     path = Path(__file__).resolve().parents[2]/'medlock-ui/pi/knob.py'
@@ -20,6 +22,7 @@ class KnobNavigation:
         self.state = None
         self.selected = None
         self.devices = ()
+        self.received = 0
 
     def attach(self,a=5,b=6,button=13,reverse=False,button_active_high=False):
         if any(pin in {7,8,9,10,11,18,22} for pin in (a,b,button)):
@@ -28,6 +31,7 @@ class KnobNavigation:
 
     def emit(self,action):
         # Capture the visible revision when GPIO fires; no HTTP in callbacks.
+        self.received += 1
         state = self.state
         if state is not None:
             try:self.events.put_nowait((action,state['revision']))
@@ -55,14 +59,27 @@ class KnobNavigation:
             elif action=='press':
                 return state,buttons[index]
 
-    def draw(self,frame):
+    def draw(self,frame,state=_VISIBLE):
+        if state is _VISIBLE:state=self.state
         image = frame.copy()
-        if self.state is not None:
-            for button in self.state['buttons']:
-                if button['action']==self.selected:
+        if state is not None:
+            actions={b['action'] for b in state['buttons']}
+            default=next((b for b in state['buttons'] if b['action']!='help'),None)
+            default=default or (state['buttons'][0] if state['buttons'] else {})
+            selected=self.selected if self.selected in actions else default.get('action')
+            for button in state['buttons']:
+                if button['action']==selected:
                     x,y,w,h = (button[k] for k in ('x','y','width','height'))
                     ImageDraw.Draw(image).rectangle((x+2,y+2,x+w-3,y+h-3),outline='#d27800',width=3)
         return image
+
+    def status(self):
+        """Observe already-owned pins; no extra GPIO devices or pin scanning."""
+        if not self.devices:return {'events':self.received,'levels':None}
+        encoder=self.devices[0]
+        levels={'A':int(encoder.a.pin.state),'B':int(encoder.b.pin.state)}
+        if len(self.devices)>1:levels['SW']=int(self.devices[1].pin.state)
+        return {'events':self.received,'levels':levels}
 
     def close(self):
         self.state = None

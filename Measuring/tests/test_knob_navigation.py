@@ -97,3 +97,36 @@ def test_knob_actions_reach_the_measuring_api_and_stale_press_is_rejected():
         if current['screen']=='result':break
         time.sleep(.01)
     assert current['result']['state']=='no_air_detected'
+
+
+def test_real_gpiozero_decoder_with_simulated_electrical_edges():
+    gpiozero=pytest.importorskip('gpiozero')
+    from gpiozero.pins.mock import MockFactory
+    previous=gpiozero.Device.pin_factory
+    factory=MockFactory()
+    gpiozero.Device.pin_factory=factory
+    nav=KnobNavigation()
+    try:
+        nav.attach()
+        nav.sync(state())
+        a,b,button=(factory.pin(pin) for pin in (5,6,13))
+        # Ground common, pulled-up contacts: complete Gray-code quadrature.
+        a.drive_low();b.drive_low();a.drive_high();b.drive_high()
+        nav.read()
+        first=nav.selected
+        assert first!='seat'
+        b.drive_low();a.drive_low();b.drive_high();a.drive_high()
+        nav.read()
+        assert nav.selected=='seat'
+        button.drive_low()
+        assert nav.read()[1]['action']=='seat'
+        # Holding down must not generate repeat presses.
+        assert nav.read() is None
+        button.drive_high()
+        status=nav.status()
+        assert status['levels']=={'A':1,'B':1,'SW':1}
+        assert status['events']==3
+    finally:
+        nav.close()
+        gpiozero.Device.pin_factory=previous
+        factory.close()

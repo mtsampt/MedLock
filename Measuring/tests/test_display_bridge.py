@@ -76,3 +76,44 @@ def test_touch_hold_triggers_once_per_press():
     assert touch.read_taps()==[]
     events=[S(type=1,code=330,value=1),S(type=0,code=0,value=0)]
     assert touch.read_taps()==[(160,120)]
+
+
+def test_knob_input_during_slow_lcd_write_is_not_lost():
+    from PIL import Image
+    from medlock_device.knob_navigation import KnobNavigation
+    nav=KnobNavigation()
+    state={'revision':7,'buttons':[
+        {'action':'seat','x':12,'y':180,'width':144,'height':48},
+        {'action':'capture','x':164,'y':180,'width':144,'height':48}]}
+    frame=Image.new('RGB',(320,240),'white')
+    previous=bridge.paint_frame(frame,state,nav,lambda image:None,None)
+    nav.emit('next');nav.read()
+    # A press arrives from the GPIO thread while SPI sends the focus redraw.
+    previous=bridge.paint_frame(frame,state,nav,lambda image:nav.emit('press'),previous)
+    visible,button=nav.read()
+    assert visible['revision']==7 and button['action']=='capture'
+
+
+def test_knob_redraw_cannot_retarget_old_press_to_new_screen():
+    from PIL import Image
+    from medlock_device.knob_navigation import KnobNavigation
+    nav=KnobNavigation()
+    old={'revision':1,'buttons':[{'action':'capture','x':12,'y':180,'width':296,'height':48}]}
+    new={'revision':2,'buttons':[{'action':'retry','x':12,'y':180,'width':296,'height':48}]}
+    frame=Image.new('RGB',(320,240),'white')
+    previous=bridge.paint_frame(frame,old,nav,lambda image:None,None)
+    # Event occurring before the new physical frame is committed belongs to old.
+    frame.putpixel((0,0),(0,0,0))
+    bridge.paint_frame(frame,new,nav,lambda image:nav.emit('press'),previous)
+    assert nav.read() is None
+    nav.emit('press')
+    assert nav.read()[1]['action']=='retry'
+
+
+def test_knob_is_default_and_explicit_input_modes_do_not_claim_it():
+    assert bridge.parse_args([]).knob
+    assert bridge.parse_args(['--knob']).knob
+    assert not bridge.parse_args(['--no-knob']).knob
+    assert not bridge.parse_args(['--spi-touch']).knob
+    assert not bridge.parse_args(['--touch-device','/dev/input/event4']).knob
+    with pytest.raises(SystemExit):bridge.parse_args(['--knob','--spi-touch'])

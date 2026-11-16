@@ -180,3 +180,36 @@ error such as a busy pin or permission failure is also useful: keep that
 output. No changes do not by themselves prove a broken knob; pin mapping,
 connections, and software pin access still need checking. Press **Ctrl+C**
 before restarting the normal measuring screen with `--knob`.
+
+## Updated normal measuring-screen launch: knob controls
+
+The normal launcher now enables the shared `knob.py` controls by default.
+A redraw bug that discarded input while SPI was writing has been corrected:
+turns and presses are queued against the last visible screen, and presses
+from an old screen revision cannot select a different screen's buttons.
+Software tests exercise input during redraw and real GPIO Zero decoding with
+simulated electrical edges. Physical operation on the assembled Pi still
+needs confirmation; this update cannot establish that the wiring is correct.
+
+Stop the existing screen program and other knob readers with **Ctrl+C**, then
+copy this one block:
+
+```sh
+cd "$HOME/MedLock/Measuring" &&
+git -C .. pull --ff-only &&
+.venv/bin/python scripts/mirror_pi_display.py --start-app --take-over --replay
+```
+
+Turn to move the amber outline; press to select. **Seat (demo)** is selected
+first. Terminal status automatically reports the configured knob's existing
+pin levels and received-event count while the normal app runs, so a separate
+GPIO diagnostic is optional. Status samples can miss brief transitions; an
+unchanged sample does not prove that hardware is faulty. The default pins
+remain the supplied design's BCM5/6/13. `--knob` is still accepted explicitly;
+`--no-knob` selects display/browser-only mode and does not claim encoder pins.
+Touch modes explicitly disable the knob reader. Do not run standalone
+`knob.py` at the same time as this bridge.
+
+For real-camera mode, stop any existing measuring backend as well as the
+bridge, and omit `--replay` on the next launch. As before, an existing backend
+retains its current capture mode.

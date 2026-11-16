@@ -4,6 +4,10 @@ The native Pillow renderer now presents the guided preparation flow using the sa
 
 The old Seat/Check/Details-only controller has been replaced. Begin, confirm supplies, advance preparation, then check. Photo replay requires explicit simulated seating. Hardware mode requires a seat GPIO; it never assumes a seated syringe. Both views clear stale results and cannot complete a combined check without calibrated volume.
 
+## Existing working Pi screen
+
+For the Pi already running Measuring on `main`, use the [one-command launch at the bottom of the repository README](../../README.md#launch-on-the-small-pi-touchscreen). `scripts/mirror_pi_display.py` reuses `/home/medlock/medlock_home.py`, SPI0.0 at 8 MHz, DC GPIO22, LCD backlight GPIO18, and the shared knob reader on GPIO5/6/13. It displays the Code_Together guided session and forwards controls to that same backend. No reset-pin or touch-device configuration is needed for this existing setup. The direct ILI9341 adapter described below is a separate option.
+
 ## What the display actually needs
 
 SparkFun lists COM-28379 as an **ILI9341 TFT** with an **XPT2046 resistive touchscreen** library, and recommends it for Teensy. It is a component module, not an HDMI monitor or a Raspberry Pi display HAT. Display SPI and touch input are separate interfaces. The Pi adapter is implemented against those controller interfaces, but COM-28379, SPI bus sharing and touch operation are **not hardware tested**.

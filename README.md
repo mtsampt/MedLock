@@ -15,12 +15,12 @@ The bundled model detects visible air experimentally. Actual Pi/display/GPIO ope
 
 ## Launch on the small Pi touchscreen
 
-On the Pi, run the command below from your `MedLock` repository folder on the `Code_Together` branch. It launches the native ILI9341 interface using saved syringe photos.
+On the Pi, run the command below from your `MedLock` repository folder on the `Code_Together` branch. It reuses the working `main` branch display bridge and `/home/medlock/medlock_home.py` driver: SPI0.0 at 8 MHz, DC GPIO22, LCD backlight GPIO18, and knob GPIO5/6/13. No wiring prompts, reset-pin setting or touch-device configuration are required.
 
-The first run asks for your screen's confirmed CS, DC and RESET BCM pin numbers and full touch input device path. It saves these in `Measuring/runtime/touchscreen.json` and reuses them on later launches. Add `--configure` to enter them again. The launcher uses `Measuring/.venv/bin/python`, the repository's `.venv/bin/python`, or the current Python interpreter, in that order.
+Stop the previous screen bridge, measuring backend and any standalone `knob.py` with Ctrl+C first. The bridge starts the Code_Together guided preparation flow, uses saved syringe photos, and lets you turn the knob to highlight a button and press to select it. It temporarily stops the existing home screen and restores it when you exit with Ctrl+C. The original driver file is read, not edited.
 
-The display dependencies, SPI and touch driver must already be configured; see [touchscreen setup](Measuring/medlock_device/TOUCHSCREEN.md). Physical display operation still requires verification on your Pi.
+This uses the Pi's existing Measuring virtual environment and display dependencies. The old `python3 Measuring/scripts/launch_touchscreen.py` shortcut now delegates to the same bridge without prompting. The bridge has software checks; this branch's integrated flow still needs a run on your assembled Pi.
 
 ```bash
-python3 Measuring/scripts/launch_touchscreen.py
+Measuring/.venv/bin/python Measuring/scripts/mirror_pi_display.py --start-app --take-over --replay
 ```

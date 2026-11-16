@@ -1,0 +1,283 @@
+"""Mirror station frames through the Pi's existing, working medlock_home.py driver.
+
+The startup file is read, never edited. Only its three display functions are
+loaded; its top-level GPIO initialization and infinite loop are not executed.
+Controls use knob.py directly, Linux input, or IRQ-free SPI touch polling.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+FUNCTIONS = {'command', 'init_lcd', 'display_image'}
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+
+from medlock_device.touchscreen import render, view
+
+
+def extract_functions(source):
+    tree = ast.parse(source)
+    functions = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in FUNCTIONS]
+    if {n.name for n in functions} != FUNCTIONS:
+        raise ValueError('Startup driver must define command, init_lcd and display_image.')
+    constants = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets)==1 and isinstance(node.targets[0], ast.Name):
+            if node.targets[0].id in {'WIDTH','HEIGHT','DC_GPIO','BL_GPIO'}:
+                constants[node.targets[0].id] = ast.literal_eval(node.value)
+    expected = {'WIDTH':320,'HEIGHT':240,'DC_GPIO':22,'BL_GPIO':18}
+    if constants != expected:
+        raise ValueError(f'Driver constants differ from the recorded setup: {constants}. Recheck wiring first.')
+    opens = [n for n in tree.body if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
+             and isinstance(n.value.func, ast.Attribute) and isinstance(n.value.func.value, ast.Name)
+             and n.value.func.value.id=='spi' and n.value.func.attr=='open']
+    if len(opens)!=1 or [ast.literal_eval(a) for a in opens[0].value.args] != [0,0]:
+        raise ValueError('Expected the recorded SPI bus 0, device 0 setup.')
+    return compile(ast.Module(body=functions,type_ignores=[]),'<existing display functions>','exec'), constants
+
+
+def driver_pids(driver):
+    result=[]
+    for entry in Path('/proc').iterdir():
+        if not entry.name.isdigit() or int(entry.name)==os.getpid():
+            continue
+        try:
+            argv=(entry/'cmdline').read_bytes().split(b'\0')
+            if len(argv)>1 and Path(argv[1].decode()).resolve()==driver.resolve():
+                result.append(int(entry.name))
+        except (OSError,UnicodeError):
+            continue
+    return result
+
+
+def alive(pid):
+    try:
+        os.kill(pid,0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def stop_home(driver):
+    stopped=False
+    for pid in driver_pids(driver):
+        print(f'Stopping only the existing home-screen process ({pid}).',flush=True)
+        for sig,seconds in [(signal.SIGINT,3),(signal.SIGTERM,2)]:
+            if not alive(pid):break
+            os.kill(pid,sig)
+            deadline=time.monotonic()+seconds
+            while alive(pid) and time.monotonic()<deadline:time.sleep(.1)
+        if alive(pid):
+            raise RuntimeError('The home-screen process did not stop. No display takeover attempted.')
+        stopped=True
+    if driver_pids(driver):
+        raise RuntimeError('The home screen automatically restarted. Identify its startup service before continuing.')
+    return stopped
+
+
+def read_frame(url):
+    return render(read_state(url))
+
+
+def read_state(url):
+    with urlopen(url,timeout=5) as response:
+        state=json.loads(response.read(1_000_000))
+    if not isinstance(state,dict) or not isinstance(state.get('session_id'),str):
+        raise ValueError('Expected the Code_Together guided station. Stop the old backend and relaunch.')
+    return dict(state, **view(state))
+
+
+def forward_tap(url,state,x,y):
+    if type(state.get('revision')) is not int or not isinstance(state.get('session_id'),str):
+        raise ValueError('Restart the Code_Together station backend before enabling controls.')
+    for button in state['buttons']:
+        if button['x']<=x<button['x']+button['width'] and button['y']<=y<button['y']+button['height']:
+            data=json.dumps({'action':button['action'],'session_id':state['session_id'],'revision':state['revision']}).encode()
+            try:
+                with urlopen(Request(url,data=data,headers={'Content-Type':'application/json'}),timeout=5) as response:
+                    response.read()
+            except HTTPError as exc:
+                if exc.code!=409:raise
+            return True
+    return False
+
+
+def paint_frame(frame,state,knob,show,previous):
+    """Publish input state only AFTER its frame is visible; retain redraw input.
+
+    GPIO callbacks continue to enqueue against the last visible revision while
+    SPI is busy. A focus-only redraw preserves those events. A screen change
+    invalidates old-revision events when the next frame is committed.
+    """
+    image=knob.draw(frame,state) if knob else frame
+    pixels=image.tobytes()
+    if pixels!=previous:show(image)
+    if knob:knob.sync(state)
+    return pixels
+
+
+def parse_args(argv=None):
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--driver',type=Path,default=Path('/home/medlock/medlock_home.py'))
+    parser.add_argument('--start-app',action='store_true',help='Start the local camera app if it is not running')
+    parser.add_argument('--take-over',action='store_true',help='Temporarily stop the exact home-screen script')
+    parser.add_argument('--rotation',type=int,choices=[0,90,180,270],default=90)
+    parser.add_argument('--replay',action='store_true',help='Use saved photos if this command starts the app')
+    group=parser.add_mutually_exclusive_group()
+    group.add_argument('--touch-device',type=Path,help='Confirmed ADS7846/XPT2046 /dev/input/eventX')
+    group.add_argument('--spi-touch',action='store_true',help='REV B XPT2046 on SPI0.1; IRQ not connected')
+    group.add_argument('--knob',action='store_true',help='Use shared knob.py controls (default)')
+    group.add_argument('--no-knob',action='store_true',help='Display/browser-only mode without claiming encoder pins')
+    parser.add_argument('--knob-a',type=int,default=5)
+    parser.add_argument('--knob-b',type=int,default=6)
+    parser.add_argument('--knob-button',type=int,default=13)
+    parser.add_argument('--knob-reverse',action='store_true')
+    parser.add_argument('--knob-button-active-high',action='store_true')
+    parser.add_argument('--calibrate-touch',action='store_true',help='Repeat four-target SPI touch setup')
+    parser.add_argument('--touch-calibration',type=Path,default=ROOT/'outputs/touch-calibration.json')
+    parser.add_argument('--touch-swap',action='store_true')
+    parser.add_argument('--touch-invert-x',action='store_true')
+    parser.add_argument('--touch-invert-y',action='store_true')
+    args=parser.parse_args(argv)
+    args.knob=args.knob or not (args.no_knob or args.touch_device or args.spi_touch)
+    if args.calibrate_touch and not args.spi_touch:parser.error('--calibrate-touch requires --spi-touch')
+    return args
+
+
+def main():
+    args=parse_args()
+    if sys.platform!='linux':raise RuntimeError('Run this bridge on the Raspberry Pi, not the Mac.')
+    code,constants=extract_functions(args.driver.read_text())
+    frame_url=state_url='http://127.0.0.1:8767/api/state'
+    action_url='http://127.0.0.1:8767/api/action'
+    # Verify dependencies before stopping the working display.
+    import spidev
+    from gpiozero import DigitalOutputDevice
+    backend=None
+    dc=backlight=spi=touch=knob=None
+    stopped=False
+    try:
+        try:
+            first_frame=read_frame(frame_url)
+        except (URLError,TimeoutError):
+            if not args.start_app:raise RuntimeError('Start Step 4/5 first, or add --start-app.')
+            command=[sys.executable,'-m','medlock_device','--bundle','outputs/pi-bundle',
+                     '--rotation',str(0 if args.replay else args.rotation)]
+            if args.replay:command += ['--replay','outputs/medlock-pilot-2026-10-21/images']
+            backend=subprocess.Popen(command,cwd=ROOT,start_new_session=True)
+            deadline=time.monotonic()+60
+            while True:
+                if backend.poll() is not None:raise RuntimeError('Station app failed to start; see its error above.')
+                try:
+                    first_frame=read_frame(frame_url);break
+                except (URLError,TimeoutError):
+                    if time.monotonic()>deadline:raise RuntimeError('Station app startup timed out.')
+                    time.sleep(.3)
+        if args.touch_device or args.spi_touch or args.knob:
+            # Require the new revision guard before touching the running display.
+            state=read_state(state_url)
+            if not isinstance(state.get('revision'),int):
+                raise ValueError('Restart the updated station backend before enabling physical controls.')
+            if args.knob:
+                from medlock_device.knob_navigation import KnobNavigation
+                knob=KnobNavigation()
+                knob.attach(args.knob_a,args.knob_b,args.knob_button,args.knob_reverse,args.knob_button_active_high)
+            elif args.spi_touch:
+                from medlock_device.spi_touch import SpiTouch
+                touch=SpiTouch(args.touch_calibration)
+            else:
+                from medlock_device.display_hardware import EvdevTouch
+                touch=EvdevTouch(args.touch_device,args.touch_swap,args.touch_invert_x,args.touch_invert_y,exclusive=True)
+        if driver_pids(args.driver):
+            if not args.take_over:raise RuntimeError('Home screen is running. Add --take-over to temporarily replace it.')
+            stopped=stop_home(args.driver)
+        dc=DigitalOutputDevice(22,initial_value=False)
+        backlight=DigitalOutputDevice(18,initial_value=True)
+        spi=spidev.SpiDev();spi.open(0,0);spi.max_speed_hz=8_000_000;spi.mode=0
+        namespace={'time':time,'spi':spi,'dc':dc,**constants}
+        exec(code,namespace)
+        namespace['init_lcd']()
+        if args.spi_touch and (args.calibrate_touch or touch.matrix is None):
+            from medlock_device.spi_touch import calibrate
+            print('Press each of the four + targets on the little screen, then lift.',flush=True)
+            calibrate(touch,namespace['display_image'])
+        shown_state=None
+        previous=None
+        print('\nMedLock is now mirrored to the little screen.',flush=True)
+        if knob:
+            print('Knob enabled via knob.py: turn to highlight, press to select.',flush=True)
+        elif touch:
+            print('Touch enabled: SPI0.1 (REV B, polling)' if args.spi_touch else 'Touch enabled: '+str(args.touch_device),flush=True)
+        else:
+            print('Use the Pi browser at http://127.0.0.1:8767/ to operate it.',flush=True)
+        print('Ctrl+C stops the bridge and restores the previous home-screen program.',flush=True)
+        next_frame=0
+        frame=first_frame
+        next_status=0
+        last_status=None
+        while True:
+            if time.monotonic()>=next_frame:
+                before=read_state(state_url)
+                frame=read_frame(frame_url)
+                after=read_state(state_url)
+                # Only accept taps on a frame paired with stable button state.
+                shown_state=before if before==after else None
+                next_frame=time.monotonic()+.3
+            previous=paint_frame(frame,shown_state,knob,namespace['display_image'],previous)
+            if knob:
+                if time.monotonic()>=next_status:
+                    status=knob.status()
+                    if status!=last_status:
+                        print(f"Knob input: {status}",flush=True)
+                        last_status=status
+                    next_status=time.monotonic()+2
+                pressed=knob.read()
+                if pressed is not None:
+                    state,button=pressed
+                    forward_tap(action_url,state,button['x']+button['width']//2,button['y']+button['height']//2)
+                    shown_state=None
+                    knob.sync(None)
+                    next_frame=0
+            if touch:
+                for x,y in touch.read_taps():
+                    if shown_state is not None and forward_tap(action_url,shown_state,x,y):
+                        shown_state=None
+                        next_frame=0
+                        break
+            previous=paint_frame(frame,shown_state,knob,namespace['display_image'],previous)
+            time.sleep(.03 if (touch or knob) else .1)
+    finally:
+        if knob is not None:knob.close()
+        if touch is not None:touch.close()
+        if spi is not None:spi.close()
+        if dc is not None:dc.close()
+        if backlight is not None:backlight.close()
+        if backend is not None and backend.poll() is None:
+            backend.terminate()
+            try:backend.wait(timeout=25)
+            except subprocess.TimeoutExpired:
+                print('Camera app still stopping; wait before starting another copy.',file=sys.stderr)
+        if stopped and not driver_pids(args.driver):
+            subprocess.Popen(['/usr/bin/python3',str(args.driver)],start_new_session=True,
+                             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            print('Original home-screen program restarted.',flush=True)
+
+
+if __name__=='__main__':
+    def stop(signum,frame):raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM,stop)
+    try:main()
+    except KeyboardInterrupt:pass
+    except Exception as exc:
+        print(f'Display bridge stopped: {exc}',file=sys.stderr)
+        sys.exit(1)

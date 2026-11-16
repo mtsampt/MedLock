@@ -57,6 +57,67 @@ def checked(flow):
     return flow.snapshot()
 
 
+def test_existing_lcd_bridge_drives_guided_flow_and_capture(flow, monkeypatch):
+    import importlib.util
+    from urllib.error import HTTPError
+    from medlock_device.knob_navigation import KnobNavigation
+
+    spec = importlib.util.spec_from_file_location('guided_lcd_bridge', Path(__file__).parents[1] / 'scripts/mirror_pi_display.py')
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    client = create_app(flow.station, flow).test_client()
+
+    def request(url, timeout):
+        if isinstance(url, str):
+            response = client.get('/api/state')
+        else:
+            response = client.post('/api/action', json=json.loads(url.data))
+        if response.status_code >= 400:
+            raise HTTPError('http://localhost/api/action', response.status_code, 'rejected', {}, None)
+        return io.BytesIO(response.data)
+
+    monkeypatch.setattr(bridge, 'urlopen', request)
+    nav = KnobNavigation()
+
+    def state():
+        return bridge.read_state('http://localhost/api/state')
+
+    def press(action):
+        visible = state()
+        nav.sync(visible)
+        for _ in range(len(visible['buttons'])):
+            if nav.selected == action:
+                break
+            nav.emit('next')
+            nav.read()
+        assert nav.selected == action
+        nav.emit('press')
+        displayed, button = nav.read()
+        assert bridge.forward_tap('http://localhost/api/action', displayed,
+                                  button['x'] + button['width'] // 2,
+                                  button['y'] + button['height'] // 2)
+        return displayed, button
+
+    assert bridge.read_frame('http://localhost/api/state').size == (320, 240)
+    displayed, button = press('begin')
+    # An old displayed button cannot advance the new supplies screen.
+    bridge.forward_tap('http://localhost/api/action', displayed, button['x'] + 5, button['y'] + 5)
+    assert state()['screen'] == 'supplies' and state()['supply_index'] == 0
+    for _ in flow.protocol['supplies']:
+        press('confirm')
+    for _ in flow.protocol['prep_steps']:
+        press('next')
+    assert state()['screen'] == 'check'
+    press('seat')
+    press('capture')
+    flow.worker.join(3)
+    assert state()['screen'] == 'result'
+    assert state()['result']['air_detected'] is False
+    assert bridge.read_frame('http://localhost/api/state').size == (320, 240)
+    press('retry')
+    assert state()['screen'] == 'check'
+
+
 def test_guided_contract_air_only_and_no_completion(flow):
     client = create_app(flow.station, flow).test_client()
     assert client.post('/api/check', json={}).status_code == 409

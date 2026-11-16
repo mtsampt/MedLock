@@ -137,3 +137,46 @@ mode imports its GPIO callbacks directly and runs as one process.
 If Git reports a certificate problem, do not disable TLS verification. Check
 the Pi's date and the exact browser/Git certificate error. You can run code
 already installed without `git pull`, but `--knob` requires this update first.
+
+## Knob not responding: copy-and-paste diagnostic
+
+**Stop the screen bridge and any other knob reader with Ctrl+C first.** This
+checks only the design's knob pins (BCM5, BCM6, BCM13), without opening the
+camera, LCD, browser, or virtual keyboard. The input pull-ups are enabled for
+this test. It does not change wiring or boot settings.
+
+Copy this entire block into the Pi's Terminal:
+
+```sh
+cd "$HOME/MedLock" &&
+Measuring/.venv/bin/python - <<'PY'
+from gpiozero import DigitalInputDevice
+from time import sleep
+
+pins = {}
+try:
+    for number in (5, 6, 13):
+        pins[number] = DigitalInputDevice(number, pull_up=True)
+    previous = None
+    print("Turn the knob slowly, then press and release it. Ctrl+C stops.", flush=True)
+    while True:
+        current = {number: int(device.pin.state) for number, device in pins.items()}
+        if current != previous:
+            print(current, flush=True)
+            previous = current
+        sleep(0.002)
+except KeyboardInterrupt:
+    pass
+finally:
+    for device in pins.values():
+        device.close()
+PY
+```
+
+Turn slowly in both directions, then press and release the knob. Expect
+GPIO **5 and 6** to change during rotation, and **13** to change on press and
+release. Send a photo of the terminal, even if it prints only one line. An
+error such as a busy pin or permission failure is also useful: keep that
+output. No changes do not by themselves prove a broken knob; pin mapping,
+connections, and software pin access still need checking. Press **Ctrl+C**
+before restarting the normal measuring screen with `--knob`.

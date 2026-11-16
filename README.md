@@ -15,22 +15,30 @@ The bundled model detects visible air experimentally. Actual Pi/display/GPIO ope
 
 ## Launch on the small Pi touchscreen
 
-On the Pi, start from the repository root: the folder containing `Measuring`, `medlock-ui`, and `deploy`. Replace `/path/to/your/MedLock-repository` with that folder's actual path. The commands below assume the virtual environment is at `Measuring/.venv` and the display dependencies, SPI, and touch driver are already configured; see [touchscreen setup](Measuring/medlock_device/TOUCHSCREEN.md).
+On the Pi, open a Bash terminal in your `MedLock` repository folder: the folder containing `Measuring`, `medlock-ui`, and `deploy`. The commands below assume the virtual environment is at `Measuring/.venv` and the display dependencies, SPI, and touch driver are already configured; see [touchscreen setup](Measuring/medlock_device/TOUCHSCREEN.md).
 
-Replace `<CS_PIN>`, `<DC_PIN>`, and `<RESET_PIN>` with the ILI9341 screen's confirmed BCM GPIO pin numbers, and `<NUMBER>` with its touch input event number. These placeholders must be replaced before running the command.
+Run the setup commands below one line at a time. Enter each requested value when prompted: the ILI9341 screen's confirmed BCM GPIO pin numbers and its full touch input path (such as `/dev/input/event0`, only if that is the correct device). Do not include angle brackets; Bash interprets them as redirection operators and can report `syntax error near unexpected token newline`.
 
 ```bash
-cd /path/to/your/MedLock-repository
 git switch Code_Together
 cd Measuring
 
+read -r -p "LCD CS BCM pin: " LCD_CS_PIN
+read -r -p "LCD DC BCM pin: " LCD_DC_PIN
+read -r -p "LCD RESET BCM pin: " LCD_RESET_PIN
+read -r -p "Touch input device path: " LCD_TOUCH_DEVICE
+```
+
+Then run this complete launch command:
+
+```bash
 .venv/bin/python -m medlock_device \
   --replay outputs/medlock-pilot-2026-10-21/images \
   --display ili9341 \
-  --display-cs <CS_PIN> \
-  --display-dc <DC_PIN> \
-  --display-reset <RESET_PIN> \
-  --touch-device /dev/input/event<NUMBER>
+  --display-cs "$LCD_CS_PIN" \
+  --display-dc "$LCD_DC_PIN" \
+  --display-reset "$LCD_RESET_PIN" \
+  --touch-device "$LCD_TOUCH_DEVICE"
 ```
 
 This opens the guided interface on the small screen using saved syringe photos. To use the real camera with confirmed Rev0 wiring, replace the `--replay outputs/medlock-pilot-2026-10-21/images` line with `--hardware-profile rev0 --rotation 90`. That profile uses GPIO17 for the seat sensor and GPIO18 for the backlight driver. Use `--rotation 270` instead if required by the camera mounting.

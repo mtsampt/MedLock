@@ -195,3 +195,11 @@ cd "$HOME/MedLock/Measuring"
 ```
 
 Then rerun the saved-photo or real-camera command above. Reinstalling packages is not normally needed. For software updates, stop the app and run `git pull --ff-only` from the repository; report any local-change conflict rather than discarding it.
+
+## Knob controls for the measuring test app
+
+Use the [current knob instructions in the root README](../README.md#measuring-test-on-the-little-lcd-controlled-by-knobpy).
+The launch flag is `--knob`, using the shared `medlock-ui/pi/knob.py` GPIO
+reader directly. Turn selects a highlighted button and pressing invokes it.
+Do not start a second knob reader. This avoids the unreliable physical touch
+input; the older touch diagnostics above remain troubleshooting tools.

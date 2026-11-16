@@ -92,3 +92,48 @@ cd "Acquisition and State Machine" && python -m pytest -q
   Today the React UI needs a browser window (mouse, or a working touch panel).
 * Supplies and prep screens are still patient-tapped, not state-machine-driven.
 * Prototype only; results are not clinical validation.
+
+## Measuring test on the little LCD, controlled by knob.py
+
+The measuring LCD bridge can now import the shared control reader from
+`medlock-ui/pi/knob.py` directly. **Turn** to move the amber button outline;
+**press** to select. No Chromium, virtual keyboard, evdev package, or physical
+touch is needed in this mode. Physical knob operation with the measuring app
+still needs verification on the assembled Pi; software checks use mocked GPIO.
+
+Stop the earlier screen bridge, standalone `knob.py`, `show_frames.py`, or other
+encoder reader with **Ctrl+C** in its own terminal before starting this. One
+program must own GPIO5/6/13, and one program must own the LCD. Stop an older
+measuring backend too if it reports an old revision.
+
+On the Pi, copy:
+
+```sh
+cd "$HOME/MedLock/Measuring" &&
+git -C .. pull --ff-only &&
+.venv/bin/python scripts/mirror_pi_display.py --start-app --take-over --replay --knob
+```
+
+Default pins come from the supplied design: A=BCM5, B=BCM6, push=BCM13. The
+first selected button is **Seat (demo)**. Press it to simulate seating, turn
+to **Check syringe**, then press again. This command uses saved photos. It
+controls the measuring test app on port8767, not the integrated station on
+port8770 or the recorded patient UI.
+
+For the **real camera**, stop both the bridge and any separately running
+measuring backend, then launch the same command without `--replay`. If a
+backend is already running, the bridge keeps its existing replay/camera mode.
+
+If turning feels backward, append `--knob-reverse`. The default push input is
+active-low; `--knob-button-active-high` is available if the hardware owner
+confirms the opposite polarity. Custom verified pins use `--knob-a`,
+`--knob-b`, and `--knob-button`. Ctrl+C releases the knob and LCD resources and
+restores the startup display if the bridge stopped it.
+
+**Do not run standalone `knob.py` alongside this command.** Its original
+browser-keyboard mode is retained for the patient UI, but the measuring LCD
+mode imports its GPIO callbacks directly and runs as one process.
+
+If Git reports a certificate problem, do not disable TLS verification. Check
+the Pi's date and the exact browser/Git certificate error. You can run code
+already installed without `git pull`, but `--knob` requires this update first.

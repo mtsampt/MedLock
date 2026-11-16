@@ -1,0 +1,99 @@
+from types import SimpleNamespace
+import sys
+
+import pytest
+from PIL import Image
+
+from medlock_device.knob_navigation import KnobNavigation, load_knob
+
+
+def state(revision=1):
+    return {'revision':revision,'buttons':[
+        {'action':a,'x':x,'y':180,'width':80,'height':48}
+        for a,x in [('help',0),('seat',90),('capture',180)]]}
+
+
+def test_rotate_select_and_visible_focus():
+    nav=KnobNavigation();nav.sync(state())
+    assert nav.selected=='seat'
+    nav.emit('next');assert nav.read() is None
+    assert nav.selected=='capture'
+    frame=Image.new('RGB',(320,240),'white')
+    focused=nav.draw(frame)
+    assert focused.getpixel((182,182))!=(255,255,255)
+    assert frame.getpixel((182,182))==(255,255,255)
+    nav.emit('press')
+    visible,button=nav.read()
+    assert visible['revision']==1 and button['action']=='capture'
+    nav.emit('next');nav.read();assert nav.selected=='help'
+    nav.emit('prev');nav.read();assert nav.selected=='capture'
+
+
+def test_stale_events_and_checking_screen_cannot_trigger_buttons():
+    nav=KnobNavigation();nav.sync(state())
+    nav.emit('press');nav.sync(state(revision=2))
+    assert nav.read() is None
+    nav.sync({'revision':3,'buttons':[]});nav.emit('press')
+    assert nav.read() is None
+    nav.sync(None);nav.emit('press');assert nav.read() is None
+
+
+def test_shared_knob_callbacks_cleanup_and_no_evdev_required(monkeypatch):
+    devices=[]
+    class Device:
+        def __init__(self,*args,**kwargs):
+            self.args=args;self.options=kwargs;self.closed=False;devices.append(self)
+        def close(self):self.closed=True
+    monkeypatch.setitem(sys.modules,'gpiozero',SimpleNamespace(Button=Device,RotaryEncoder=Device))
+    nav=KnobNavigation();nav.attach(reverse=True,button_active_high=True)
+    nav.sync(state())
+    encoder,button=devices
+    assert encoder.args==(5,6) and button.args==(13,)
+    assert button.options['pull_up'] is False
+    encoder.when_rotated_clockwise();nav.read();assert nav.selected=='help'
+    encoder.when_rotated_counter_clockwise();nav.read();assert nav.selected=='seat'
+    button.when_pressed();assert nav.read()[1]['action']=='seat'
+    nav.close();assert all(d.closed for d in devices)
+
+
+def test_shared_knob_releases_encoder_when_button_fails(monkeypatch):
+    encoder=SimpleNamespace(close=lambda:closed.append(True))
+    closed=[]
+    def fail(*args,**kwargs):raise RuntimeError('busy')
+    monkeypatch.setitem(sys.modules,'gpiozero',SimpleNamespace(RotaryEncoder=lambda *a,**k:encoder,Button=fail))
+    with pytest.raises(RuntimeError,match='busy'):load_knob().attach_controls(lambda a:None)
+    assert closed==[True]
+    with pytest.raises(ValueError,match='conflicts'):KnobNavigation().attach(a=22)
+
+
+def test_knob_actions_reach_the_measuring_api_and_stale_press_is_rejected():
+    import time
+    from medlock_device.web import create_app
+    class Station:
+        seat=None
+        preview=None
+        camera=SimpleNamespace(mode='photo replay')
+        def check(self,seated):
+            assert seated
+            return {'state':'no_air_detected'},200
+    client=create_app(Station()).test_client()
+    nav=KnobNavigation()
+    nav.sync(client.get('/api/touch').get_json())
+    def press():
+        nav.emit('press')
+        visible,button=nav.read()
+        return client.post('/api/touch',json={'action':button['action'],
+                                              'expected_revision':visible['revision']})
+    assert press().status_code==200  # Seat (demo)
+    assert press().status_code==409  # Same displayed revision cannot run again.
+    nav.sync(client.get('/api/touch').get_json())
+    assert nav.state['seated']
+    nav.emit('next');nav.read()
+    assert nav.selected=='capture'
+    assert press().status_code==200
+    deadline=time.monotonic()+2
+    while time.monotonic()<deadline:
+        current=client.get('/api/touch').get_json()
+        if current['screen']=='result':break
+        time.sleep(.01)
+    assert current['result']['state']=='no_air_detected'

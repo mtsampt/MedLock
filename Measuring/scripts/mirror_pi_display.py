@@ -2,7 +2,7 @@
 
 The startup file is read, never edited. Only its three display functions are
 loaded; its top-level GPIO initialization and infinite loop are not executed.
-Optional touch uses Linux input or IRQ-free SPI polling on confirmed REV B wiring.
+Controls use knob.py directly, Linux input, or IRQ-free SPI touch polling.
 """
 from __future__ import annotations
 
@@ -128,6 +128,12 @@ def main():
     group=parser.add_mutually_exclusive_group()
     group.add_argument('--touch-device',type=Path,help='Confirmed ADS7846/XPT2046 /dev/input/eventX')
     group.add_argument('--spi-touch',action='store_true',help='REV B XPT2046 on SPI0.1; IRQ not connected')
+    group.add_argument('--knob',action='store_true',help='Use medlock-ui/pi/knob.py for direct LCD button navigation')
+    parser.add_argument('--knob-a',type=int,default=5)
+    parser.add_argument('--knob-b',type=int,default=6)
+    parser.add_argument('--knob-button',type=int,default=13)
+    parser.add_argument('--knob-reverse',action='store_true')
+    parser.add_argument('--knob-button-active-high',action='store_true')
     parser.add_argument('--calibrate-touch',action='store_true',help='Repeat four-target SPI touch setup')
     parser.add_argument('--touch-calibration',type=Path,default=ROOT/'outputs/touch-calibration.json')
     parser.add_argument('--touch-swap',action='store_true')
@@ -143,7 +149,7 @@ def main():
     import spidev
     from gpiozero import DigitalOutputDevice
     backend=None
-    dc=backlight=spi=touch=None
+    dc=backlight=spi=touch=knob=None
     stopped=False
     try:
         try:
@@ -162,12 +168,16 @@ def main():
                 except (URLError,TimeoutError):
                     if time.monotonic()>deadline:raise RuntimeError('Station app startup timed out.')
                     time.sleep(.3)
-        if args.touch_device or args.spi_touch:
+        if args.touch_device or args.spi_touch or args.knob:
             # Require the new revision guard before touching the running display.
             state=read_state(state_url)
             if not isinstance(state.get('revision'),int):
-                raise ValueError('Restart the updated station backend before enabling touch.')
-            if args.spi_touch:
+                raise ValueError('Restart the updated station backend before enabling physical controls.')
+            if args.knob:
+                from medlock_device.knob_navigation import KnobNavigation
+                knob=KnobNavigation()
+                knob.attach(args.knob_a,args.knob_b,args.knob_button,args.knob_reverse,args.knob_button_active_high)
+            elif args.spi_touch:
                 from medlock_device.spi_touch import SpiTouch
                 touch=SpiTouch(args.touch_calibration)
             else:
@@ -189,10 +199,15 @@ def main():
         shown_state=None
         previous=None
         print('\nMedLock is now mirrored to the little screen.',flush=True)
-        print(('Touch enabled: SPI0.1 (REV B, polling)' if args.spi_touch else 'Touch enabled: '+str(args.touch_device)) if touch else
-              'Use the Pi browser at http://127.0.0.1:8767/ to operate it. Touch is not configured yet.',flush=True)
+        if knob:
+            print('Knob enabled via knob.py: turn to highlight, press to select.',flush=True)
+        elif touch:
+            print('Touch enabled: SPI0.1 (REV B, polling)' if args.spi_touch else 'Touch enabled: '+str(args.touch_device),flush=True)
+        else:
+            print('Use the Pi browser at http://127.0.0.1:8767/ to operate it. Touch is not configured yet.',flush=True)
         print('Ctrl+C stops the bridge and restores the previous home-screen program.',flush=True)
         next_frame=0
+        frame=first_frame
         while True:
             if time.monotonic()>=next_frame:
                 before=read_state(state_url)
@@ -200,19 +215,35 @@ def main():
                 after=read_state(state_url)
                 # Only accept taps on a frame paired with stable button state.
                 shown_state=before if before==after else None
-                pixels=frame.tobytes()
-                if pixels!=previous:
-                    namespace['display_image'](frame)
-                    previous=pixels
+                if knob:knob.sync(shown_state)
                 next_frame=time.monotonic()+.3
+            if knob:
+                pressed=knob.read()
+                if pressed is not None:
+                    state,button=pressed
+                    forward_tap(state_url,state,button['x']+button['width']//2,button['y']+button['height']//2)
+                    shown_state=None
+                    knob.sync(None)
+                    next_frame=0
             if touch:
                 for x,y in touch.read_taps():
                     if shown_state is not None and forward_tap(state_url,shown_state,x,y):
                         shown_state=None
                         next_frame=0
                         break
-            time.sleep(.03 if touch else .1)
+            display_frame=knob.draw(frame) if knob else frame
+            pixels=display_frame.tobytes()
+            if pixels!=previous:
+                # Ignore GPIO input during SPI redraw so actions target visible screens.
+                visible=knob.state if knob else None
+                if knob:knob.state=None
+                try:namespace['display_image'](display_frame)
+                finally:
+                    if knob:knob.state=visible
+                previous=pixels
+            time.sleep(.03 if (touch or knob) else .1)
     finally:
+        if knob is not None:knob.close()
         if touch is not None:touch.close()
         if spi is not None:spi.close()
         if dc is not None:dc.close()

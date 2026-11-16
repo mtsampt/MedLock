@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getState, sendAction, logEvent } from './api.js'
+import { getState, sendAction, logEvent, MEASURING_URL } from './api.js'
 import Frame from './components/Frame.jsx'
 import Start from './screens/Start.jsx'
 import Supplies from './screens/Supplies.jsx'
@@ -70,7 +70,7 @@ export default function App() {
   else if (state.screen === 'start') content = <Start {...frame} medication={protocol.medication} onBegin={() => act('begin')} />
   else if (state.screen === 'supplies') content = <Supplies {...frame} item={protocol.supplies[state.supply_index]} index={state.supply_index} total={protocol.supplies.length} missing={state.missing} onConfirm={() => act('confirm')} onMissing={() => act('missing')} />
   else if (state.screen === 'prep') content = <PrepStep {...frame} prep={protocol.prep_steps[state.prep_index]} onNext={() => act('next')} />
-  else if (['check', 'checking'].includes(state.screen)) content = <SyringeCheck {...frame} checking={state.screen === 'checking'} simulated={state.simulated} seated={state.seated} hardwareSeat={state.hardware_seat} onSeat={() => act('seat')} onCheck={() => act('capture')} />
+  else if (['check', 'checking'].includes(state.screen)) content = <SyringeCheck {...frame} checking={state.screen === 'checking'} simulated={state.simulated} seated={state.seated} hardwareSeat={state.hardware_seat} onSeat={() => act('seat')} onCheck={() => window.location.assign(MEASURING_URL)} />
   else if (state.screen === 'result') content = <Result {...frame} result={state.result} onContinue={() => act('complete')} onRetry={() => act('retry')} onReset={() => act('reset')} />
   else content = <Done {...frame} onFinish={() => act('reset')} />
   return <div className="stage">

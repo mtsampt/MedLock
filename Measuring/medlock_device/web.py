@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
 from .state_machine import FlowError, Session
+from . import measuring_screen
 
 
 def create_app(station, session=None, ui_dir=None):
@@ -47,6 +48,28 @@ def create_app(station, session=None, ui_dir=None):
     @app.get('/assets/<path:filename>')
     def assets(filename):
         return send_from_directory(ui_dir / 'assets', filename)
+
+    @app.get('/measuring')
+    def measuring():
+        return send_from_directory(Path(__file__).with_name('static'), 'touch.html')
+
+    @app.get('/measuring/<filename>')
+    def measuring_assets(filename):
+        if filename not in {'touch.js', 'touch.css'}:
+            return '', 404
+        return send_from_directory(Path(__file__).with_name('static'), filename)
+
+    @app.get('/api/touch')
+    def touch_state():
+        return jsonify(measuring_screen.snapshot(session, request.args.get('details') == '1'))
+
+    @app.get('/api/touch/frame')
+    def touch_frame():
+        state = measuring_screen.snapshot(session, request.args.get('details') == '1')
+        stream = io.BytesIO()
+        measuring_screen.render(state, station.preview if state['guided_screen'] == 'result' else None).save(stream, format='PNG')
+        stream.seek(0)
+        return send_file(stream, mimetype='image/png')
 
     @app.get('/api/state')
     def state():

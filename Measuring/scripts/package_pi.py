@@ -21,6 +21,9 @@ def package(out, ui, include_replay=True):
     Engine(root/'outputs/pi-bundle')
     out.mkdir(parents=True)
     shutil.copytree(root/'medlock_device',out/'medlock_device',ignore=shutil.ignore_patterns('__pycache__','ui','static'))
+    (out/'medlock_device/static').mkdir()
+    for name in ['touch.html', 'touch.css', 'touch.js']:
+        shutil.copy2(root/'medlock_device/static'/name, out/'medlock_device/static'/name)
     shutil.copytree(ui,out/'medlock_device/ui')
     (out/'medlock_lab').mkdir()
     for name in ['__init__.py','imaging.py']:

@@ -9,6 +9,8 @@ All routes share the loopback server on port 8767. React assets use the same ori
 - POST /api/log: {"event":"name"}, length 1–100. Server timestamps and marks it ui_event. UI-supplied events do not change state or confirm measurements. result_displayed additionally requires the current check_id; it records the server-time interval from seating to receipt of the browser paint acknowledgement. This is an upper-bound timing observation, not a hardware-verified display timestamp. Native output records native_result_displayed after sending the frame.
 - GET /api/status: model metadata, session snapshot, volume/air-volume capabilities.
 - GET /api/preview: current crop only while the session is on a result screen; otherwise 404.
+- GET /measuring: original Measuring touchscreen presentation. Its Back link returns to / without changing the session. JavaScript and CSS are served under /measuring/.
+- GET /api/touch and GET /api/touch/frame: the Measuring screen's session snapshot and rendered PNG. Optional details=1 selects the local Details presentation; actions still use /api/action and /api/check with the current session/revision.
 
 A check result includes verdict (pass/fix/unable), reason/reason_code, action, nullable volume_ml/air_ml, nullable air_detected, uncalibrated air_score, model_version, calibration_version, syringe_profile, setup_id, source/source_sha256, optional capture_file, timestamp, rotation, image_quality, timings (including seat_to_result_ms when available), seat_generation, session_id and check_id. Volume means calibrated occupied barrel volume, not liquid volume calculated by subtracting air. air_ml remains null.
 

@@ -6,4 +6,6 @@ Build with npm ci && npm run build. Start the backend from Measuring with python
 
 Protocol content is shared from Measuring/medlock_device/protocol.json. The server owns navigation, manual supplies confirmation, check/retry and session state. No dose time is invented. Volume and combined pass remain unavailable without actual calibration and configured target/tolerance.
 
+On step 7, Check syringe opens the original Measuring touchscreen at /measuring. Its Back button returns to the guided UI with the same preparation progress and current result. Seating, capture, retry, and help use the shared station controller. The Measuring screen also retains its original Details view. Both production and the Vite development proxy serve this screen from the Python backend.
+
 See ../docs/INTEGRATION.md for deployment, ../docs/API.md for API details, and ../INTEGRATION_PLAN.md for the project plan.

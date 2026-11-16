@@ -287,3 +287,67 @@ def test_storage_failure_after_measurement_is_not_presented_as_missing_volume(fl
     assert state['result']['verdict']=='unable' and state['result']['reason_code']=='storage_unavailable'
     assert 'Unable to verify' in view(state)['title']
     assert 'storage' in view(state)['detail']
+
+
+def test_measuring_screen_shares_guided_progress_check_and_result(flow, tmp_path):
+    from medlock_device.measuring_screen import snapshot
+    ui = tmp_path / 'ui'
+    ui.mkdir()
+    (ui / 'index.html').write_text('Guided UI')
+    client = create_app(flow.station, flow, ui).test_client()
+    ready(flow)
+    before = flow.snapshot()
+    assert client.get('/measuring').status_code == 200
+    for asset in ['touch.css', 'touch.js']:
+        assert client.get(f'/measuring/{asset}').status_code == 200
+    assert client.get('/measuring/app.js').status_code == 404
+    measuring = client.get('/api/touch').get_json()
+    assert measuring['screen'] == 'ready'
+    assert measuring['session_id'] == before['session_id']
+    assert measuring['confirmed'] == before['confirmed']
+    assert measuring['buttons'][0]['label'] == 'Back'
+    assert client.get('/').data == b'Guided UI'
+    assert flow.snapshot() == before  # Opening either presentation does not reset progress.
+
+    act(flow, 'seat')
+    current = flow.snapshot()
+    payload = dict(session_id=current['session_id'], revision=current['revision'])
+    assert client.post('/api/check', json=payload).status_code == 202
+    flow.worker.join(3)
+    result = client.get('/api/touch').get_json()
+    guided = client.get('/api/state').get_json()
+    assert result['screen'] == guided['screen'] == 'result'
+    assert result['check_id'] == guided['check_id']
+    assert result['result'] == guided['result']
+    assert client.post('/api/check', json=payload).status_code == 409
+    for query in ['', '?details=1']:
+        frame = client.get('/api/touch/frame' + query)
+        assert frame.status_code == 200 and frame.mimetype == 'image/png'
+        assert Image.open(io.BytesIO(frame.data)).size == (320, 240)
+    assert client.get('/api/touch?details=1').get_json()['screen'] == 'details'
+    assert flow.snapshot()['screen'] == 'result'  # Details are presentation only.
+    act(flow, 'retry')
+    assert snapshot(flow)['screen'] == 'ready'
+    assert flow.snapshot()['confirmed'] == before['confirmed']
+
+
+def test_measuring_screen_keeps_back_available_during_capture(flow):
+    from medlock_device.measuring_screen import snapshot, render
+    ready(flow)
+    flow.screen = 'checking'
+    state = snapshot(flow)
+    assert [button['action'] for button in state['buttons']] == ['guided', 'help']
+    assert render(state).size == (320, 240)
+    act(flow, 'help')
+    state = snapshot(flow)
+    assert state['screen'] == 'help'
+    assert any(button['action'] == 'guided' and button['label'] == 'Back' for button in state['buttons'])
+
+
+def test_measuring_screen_preserves_controller_failure(flow):
+    from medlock_device.measuring_screen import snapshot
+    ready(flow)
+    flow.screen = 'result'
+    flow.result = dict(state='no_air_detected', verdict='unable', reason_code='storage_unavailable')
+    flow.checked_at = time.monotonic()
+    assert snapshot(flow)['result']['state'] == 'unable'

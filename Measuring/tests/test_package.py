@@ -34,6 +34,9 @@ from medlock_device.web import create_app
 root=Path(sys.argv[1])
 station=Station(Engine(root/'model'),ReplayCamera(root/'replay'),root/'runtime/events.jsonl')
 assert create_app(station).test_client().get('/').status_code==200
+client=create_app(station).test_client()
+for route in ['/measuring','/measuring/touch.css','/measuring/touch.js','/api/touch','/api/touch/frame']:
+    assert client.get(route).status_code==200,route
 result,code=station.check(True)
 assert code==200 and result['state'] in {'air_detected','no_air_detected'},result
 assert not any(name in sys.modules for name in ['torch','torchvision','sklearn'])

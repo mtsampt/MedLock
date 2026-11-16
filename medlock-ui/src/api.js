@@ -1,5 +1,6 @@
 // Real station API only. Replay is explicitly selected by the backend CLI.
 const API_URL = import.meta.env?.VITE_API_URL || ''
+export const MEASURING_URL = `${API_URL}/measuring`
 const SCREENS = new Set(['start', 'supplies', 'prep', 'check', 'checking', 'result', 'done'])
 
 export function validateState(value) {

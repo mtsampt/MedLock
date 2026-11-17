@@ -31,6 +31,54 @@ def test_boot_unit_uses_existing_driver_and_waits_for_first_frame(installer):
     assert 'network-online.target' not in text
 
 
+def test_working_directory_is_an_unquoted_absolute_path(installer, monkeypatch):
+    measuring = Path('/home/medlock/MedLock/Measuring')
+    monkeypatch.setattr(installer, 'MEASURING', measuring)
+    text = installer.service_text()
+    directory = next(line.split('=', 1)[1] for line in text.splitlines() if line.startswith('WorkingDirectory='))
+    assert directory == str(measuring)
+    assert Path(directory).is_absolute()
+    # Command arguments still need their own quoting rules.
+    assert f'ExecStart="{measuring}/.venv/bin/python" ' in text
+
+
+def test_validation_uses_the_pi_systemd_parser(installer, monkeypatch):
+    calls = []
+    def run(*args, **kwargs):
+        assert args[:2] == ('systemd-analyze', 'verify')
+        path = args[2]
+        assert path.name == installer.UNIT
+        calls.append(path.read_text())
+        raise subprocess.CalledProcessError(1, list(args), stderr='bad unit setting')
+    monkeypatch.setattr(installer, 'run', run)
+    with pytest.raises(subprocess.CalledProcessError):
+        installer.validate_unit('invalid unit')
+    assert calls == ['invalid unit']
+
+
+def test_invalid_unit_does_not_touch_installed_services(installer, monkeypatch, tmp_path):
+    measuring = tmp_path / 'Measuring'
+    python = measuring / '.venv/bin/python'
+    python.parent.mkdir(parents=True)
+    python.touch()
+    python.chmod(0o755)
+    driver = tmp_path / 'home.py'
+    driver.touch()
+    monkeypatch.setattr(installer, 'MEASURING', measuring)
+    monkeypatch.setattr(installer, 'DRIVER', driver)
+    monkeypatch.setattr(installer, 'STATE', tmp_path / 'backup.json')
+    monkeypatch.setattr(installer, 'run', lambda *a, **kw: result())
+    def invalid(text):
+        raise subprocess.CalledProcessError(1, ['systemd-analyze', 'verify'])
+    monkeypatch.setattr(installer, 'validate_unit', invalid)
+    def forbidden(*a, **kw):
+        pytest.fail('No installed service should be changed before validation succeeds')
+    monkeypatch.setattr(installer, 'ctl', forbidden)
+    with pytest.raises(subprocess.CalledProcessError):
+        installer.install()
+    assert not installer.STATE.exists()
+
+
 def test_identify_only_exact_home_driver_services(installer, monkeypatch):
     def ctl(scope, *args, **kwargs):
         if args[0] == 'list-unit-files':

@@ -43,7 +43,13 @@ def quote(value, exec_arg=False):
 
 
 def service_text():
-    values = {'MEASURING': quote(MEASURING), 'PYTHON': quote(MEASURING / '.venv/bin/python', exec_arg=True),
+    # WorkingDirectory is a single path, not an ExecStart argument list:
+    # systemd retains surrounding quotes there as literal path characters.
+    directory = str(MEASURING)
+    if not MEASURING.is_absolute() or '\n' in directory or '\r' in directory:
+        raise ValueError('The Measuring directory must be an absolute path without line breaks.')
+    values = {'MEASURING': quote(MEASURING), 'WORKING_DIRECTORY': directory.replace('%', '%%'),
+              'PYTHON': quote(MEASURING / '.venv/bin/python', exec_arg=True),
               'BRIDGE': quote(MEASURING / 'scripts/mirror_pi_display.py', exec_arg=True),
               'DRIVER': quote(DRIVER, exec_arg=True), 'USER': pwd.getpwuid(os.getuid()).pw_name,
               'GROUP': grp.getgrgid(os.getgid()).gr_name}
@@ -51,6 +57,14 @@ def service_text():
     for key, value in values.items():
         text = text.replace('@' + key + '@', value)
     return text
+
+
+def validate_unit(text):
+    """Use this Pi's systemd parser before changing any installed services."""
+    with tempfile.TemporaryDirectory(prefix='medlock-startup-') as temporary:
+        path = Path(temporary) / UNIT
+        path.write_text(text)
+        run('systemd-analyze', 'verify', path)
 
 
 def home_services(scope):
@@ -135,6 +149,8 @@ def install():
     run(python, '-c', 'import cv2, numpy, PIL, flask, waitress, gpiozero, spidev; '
         'from medlock_device.runtime import Engine; '
         'Engine("outputs/pi-bundle")', cwd=MEASURING)
+    text = service_text()
+    validate_unit(text)
     check_other_launchers()
     run('sudo', '-v')
     # Reject an independently running backend rather than attaching boot service
@@ -159,7 +175,7 @@ def install():
             print('Pausing old home screen: ' + service['name'], flush=True)
             ctl(service['scope'], 'disable', '--now', service['name'])
         ctl('system', 'stop', UNIT, check=False)
-        write_unit(service_text())
+        write_unit(text)
         ctl('system', 'daemon-reload')
         ctl('system', 'enable', UNIT)
         print('Starting the screen service; waiting for its first frame…', flush=True)

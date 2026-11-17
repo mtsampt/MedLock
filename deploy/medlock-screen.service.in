@@ -9,7 +9,7 @@ Type=notify
 NotifyAccess=main
 User=@USER@
 Group=@GROUP@
-WorkingDirectory=@MEASURING@
+WorkingDirectory=@WORKING_DIRECTORY@
 Environment=PYTHONUNBUFFERED=1
 ExecStartPre=/usr/bin/test -r @DRIVER@
 ExecStart=@PYTHON@ @BRIDGE@ --start-app --take-over --replay --service-mode

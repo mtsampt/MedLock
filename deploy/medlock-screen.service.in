@@ -1,0 +1,24 @@
+[Unit]
+Description=MedLock combined flow on the Pi screen
+After=local-fs.target
+RequiresMountsFor=@MEASURING@
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=@USER@
+Group=@GROUP@
+WorkingDirectory=@MEASURING@
+Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/usr/bin/test -r @DRIVER@
+ExecStart=@PYTHON@ @BRIDGE@ --start-app --take-over --replay --service-mode
+Restart=always
+RestartSec=5
+TimeoutStartSec=90
+TimeoutStopSec=45
+KillMode=mixed
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

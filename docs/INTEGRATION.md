@@ -56,6 +56,10 @@ The report includes a quadrature rotary encoder with a pushbutton. Pass --encode
 
 ## Automatic startup
 
+For the existing `/home/medlock/MedLock` checkout and working `medlock_home.py` display driver, use the [one-time startup installer](../README.md#start-automatically-when-the-pi-powers-on). It runs the combined screen/knob bridge and backend under one `medlock-screen` system service in the same saved-photo mode as the manual command. The installer preserves the earlier home-screen service configuration for rollback. This path does not require the separate Chromium kiosk autostart. Physical reboot verification remains pending until the installer is run on the Pi.
+
+The following is the separate portable `/opt/medlock` bundle setup, for a station deployed there:
+
 Create a dedicated medlock system user with access to the actual gpio/spi/input/video device groups. Check these groups and device permissions on the chosen OS. Place the immutable application at /opt/medlock, copy deploy/station.env.example to /etc/medlock/station.env, and edit MEDLOCK_ARGS for the chosen display and confirmed wiring. The example explicitly uses replay. Copy deploy/medlock.service to /etc/systemd/system/medlock.service, then run systemctl daemon-reload and systemctl enable --now medlock. Inspect journalctl -u medlock for startup failures. The service creates /var/lib/medlock for logs and permits no application writes elsewhere.
 
 SIGINT/SIGTERM stop the server and join the acquisition worker before GPIO cleanup. The camera subprocess has a 20-second deadline. The service enforces a 45-second stop budget; model/native-driver hangs still need physical fault testing. Reboot/autostart is not yet verified on the Pi.

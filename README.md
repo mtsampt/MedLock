@@ -24,3 +24,29 @@ This uses the Pi's existing Measuring virtual environment and display dependenci
 ```bash
 Measuring/.venv/bin/python Measuring/scripts/mirror_pi_display.py --start-app --take-over --replay
 ```
+
+## Start automatically when the Pi powers on
+
+On the Pi, stop the existing screen bridge and measuring backend with Ctrl+C. From your `MedLock` folder on `Code_Together`, run this once:
+
+```bash
+git pull --ff-only origin Code_Together && python3 deploy/install_pi_startup.py
+```
+
+Enter your sudo password if requested. The installer checks the existing Pi environment and model, installs any missing device Python dependencies (including Waitress), and enables the `medlock-screen` system service. It starts the combined flow immediately and on future boots after Raspberry Pi OS starts, without a terminal, desktop login, browser or network connection. Setup may need internet to install missing dependencies. It retains the current saved-photo mode: the images are replayed and the actual model runs when you select Check syringe.
+
+The existing display driver and knob settings are reused. System or user services that directly start `/home/medlock/medlock_home.py` are recorded and disabled so that one program owns the screen. If the installer finds that script in a different startup mechanism, such as a crontab or desktop entry, it reports the location to remove before continuing; it does not edit those files or the driver. If service startup fails, it restores the recorded home-screen services. Backups are kept in `Measuring/runtime/pi-startup-backup.json`. The new startup service reports ready after its first display write succeeds and restarts the combined program if it crashes.
+
+To check it, restart the Pi when convenient and verify that the guided screen and knob work without opening a terminal. Reboot and physical startup verification must be performed on the Pi. Useful commands:
+
+```bash
+systemctl status medlock-screen --no-pager
+journalctl -u medlock-screen -b --no-pager
+sudo systemctl restart medlock-screen
+```
+
+To remove this automatic startup and restore the previous home-screen services, run from `MedLock`:
+
+```bash
+python3 deploy/install_pi_startup.py --uninstall
+```

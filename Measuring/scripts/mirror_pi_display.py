@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -126,11 +127,22 @@ def paint_frame(frame,state,knob,show,previous):
     return pixels
 
 
+def notify_ready():
+    """Report readiness only after the first physical display write returns."""
+    address=os.environ.get('NOTIFY_SOCKET')
+    if not address:return
+    if address.startswith('@'):address='\0'+address[1:]
+    with socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM) as connection:
+        connection.connect(address)
+        connection.sendall(b'READY=1\nSTATUS=Guided flow visible; knob controls running')
+
+
 def parse_args(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--driver',type=Path,default=Path('/home/medlock/medlock_home.py'))
     parser.add_argument('--start-app',action='store_true',help='Start the local camera app if it is not running')
     parser.add_argument('--take-over',action='store_true',help='Temporarily stop the exact home-screen script')
+    parser.add_argument('--service-mode',action='store_true',help='Own the backend and leave home-screen restart to the boot manager')
     parser.add_argument('--rotation',type=int,choices=[0,90,180,270],default=90)
     parser.add_argument('--replay',action='store_true',help='Use saved photos if this command starts the app')
     group=parser.add_mutually_exclusive_group()
@@ -169,6 +181,8 @@ def main():
     try:
         try:
             first_frame=read_frame(frame_url)
+            if args.service_mode:
+                raise RuntimeError('Another backend is using port 8767. Stop it before starting the boot service.')
         except (URLError,TimeoutError):
             if not args.start_app:raise RuntimeError('Start Step 4/5 first, or add --start-app.')
             command=[sys.executable,'-m','medlock_device','--bundle','outputs/pi-bundle',
@@ -220,11 +234,12 @@ def main():
             print('Touch enabled: SPI0.1 (REV B, polling)' if args.spi_touch else 'Touch enabled: '+str(args.touch_device),flush=True)
         else:
             print('Use the Pi browser at http://127.0.0.1:8767/ to operate it.',flush=True)
-        print('Ctrl+C stops the bridge and restores the previous home-screen program.',flush=True)
+        print('Stop with systemctl stop medlock-screen.' if args.service_mode else 'Ctrl+C stops the bridge and restores the previous home-screen program.',flush=True)
         next_frame=0
         frame=first_frame
         next_status=0
         last_status=None
+        ready=False
         while True:
             if time.monotonic()>=next_frame:
                 before=read_state(state_url)
@@ -234,6 +249,9 @@ def main():
                 shown_state=before if before==after else None
                 next_frame=time.monotonic()+.3
             previous=paint_frame(frame,shown_state,knob,namespace['display_image'],previous)
+            if not ready:
+                notify_ready()
+                ready=True
             if knob:
                 if time.monotonic()>=next_status:
                     status=knob.status()
@@ -267,7 +285,7 @@ def main():
             try:backend.wait(timeout=25)
             except subprocess.TimeoutExpired:
                 print('Camera app still stopping; wait before starting another copy.',file=sys.stderr)
-        if stopped and not driver_pids(args.driver):
+        if stopped and not args.service_mode and not driver_pids(args.driver):
             subprocess.Popen(['/usr/bin/python3',str(args.driver)],start_new_session=True,
                              stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             print('Original home-screen program restarted.',flush=True)

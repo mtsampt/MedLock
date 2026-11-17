@@ -117,3 +117,79 @@ def test_knob_is_default_and_explicit_input_modes_do_not_claim_it():
     assert not bridge.parse_args(['--spi-touch']).knob
     assert not bridge.parse_args(['--touch-device','/dev/input/event4']).knob
     with pytest.raises(SystemExit):bridge.parse_args(['--knob','--spi-touch'])
+
+
+def test_service_readiness_notification_is_optional_and_supports_abstract_sockets(monkeypatch):
+    monkeypatch.delenv('NOTIFY_SOCKET', raising=False)
+    bridge.notify_ready()
+    calls=[]
+    class Socket:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def connect(self,address):calls.append(address)
+        def sendall(self,data):calls.append(data)
+    monkeypatch.setattr(bridge.socket,'socket',lambda *a:Socket())
+    monkeypatch.setenv('NOTIFY_SOCKET','@medlock-test')
+    bridge.notify_ready()
+    assert calls[0]=='\0medlock-test'
+    assert calls[1].startswith(b'READY=1\n')
+
+
+def test_service_owns_backend_and_stops_it_without_restarting_home(monkeypatch,tmp_path):
+    import sys
+    from types import SimpleNamespace as S
+    from urllib.error import URLError
+    from PIL import Image
+    driver=tmp_path/'home.py';driver.touch()
+    args=bridge.parse_args([
+        '--start-app','--take-over','--replay','--service-mode','--no-knob','--driver',str(driver)])
+    monkeypatch.setattr(bridge,'parse_args',lambda:args)
+    monkeypatch.setattr(sys,'platform','linux')
+    events=[]
+    spi=S(open=lambda *a:None,close=lambda:events.append('spi_closed'),events=events)
+    monkeypatch.setitem(sys.modules,'spidev',S(SpiDev=lambda:spi))
+    monkeypatch.setitem(sys.modules,'gpiozero',S(DigitalOutputDevice=lambda *a,**kw:S(close=lambda:None)))
+    code=compile('def init_lcd(): spi.events.append("init")\ndef display_image(image): spi.events.append("frame")','driver','exec')
+    monkeypatch.setattr(bridge,'extract_functions',lambda source:(code,{}))
+    monkeypatch.setattr(bridge,'driver_pids',lambda path:[123])
+    monkeypatch.setattr(bridge,'stop_home',lambda path:True)
+    frame=Image.new('RGB',(320,240))
+    def read_frame(url):
+        if not events:
+            events.append('backend_missing')
+            raise URLError('not started')
+        return frame
+    monkeypatch.setattr(bridge,'read_frame',read_frame)
+    monkeypatch.setattr(bridge,'read_state',lambda url:{'session_id':'test','revision':1,'buttons':[]})
+    child=S(poll=lambda:None,terminate=lambda:events.append('backend_stopped'),wait=lambda timeout:None)
+    commands=[]
+    def popen(command,**kwargs):
+        commands.append(command)
+        return child
+    monkeypatch.setattr(bridge.subprocess,'Popen',popen)
+    def ready():
+        assert 'frame' in events
+        events.append('ready')
+        raise KeyboardInterrupt
+    monkeypatch.setattr(bridge,'notify_ready',ready)
+    with pytest.raises(KeyboardInterrupt):bridge.main()
+    assert events.index('frame')<events.index('ready')<events.index('backend_stopped')
+    assert 'spi_closed' in events
+    assert len(commands)==1  # No orphaned home-screen process during service stop.
+    assert '--replay' in commands[0] and commands[0][commands[0].index('--rotation')+1]=='0'
+
+
+def test_service_rejects_a_backend_owned_by_another_terminal(monkeypatch,tmp_path):
+    import sys
+    from types import SimpleNamespace as S
+    from PIL import Image
+    driver=tmp_path/'home.py';driver.touch()
+    args=bridge.parse_args(['--start-app','--service-mode','--no-knob','--driver',str(driver)])
+    monkeypatch.setattr(bridge,'parse_args',lambda:args)
+    monkeypatch.setattr(sys,'platform','linux')
+    monkeypatch.setitem(sys.modules,'spidev',S())
+    monkeypatch.setitem(sys.modules,'gpiozero',S(DigitalOutputDevice=None))
+    monkeypatch.setattr(bridge,'extract_functions',lambda source:(None,{}))
+    monkeypatch.setattr(bridge,'read_frame',lambda url:Image.new('RGB',(320,240)))
+    with pytest.raises(RuntimeError,match='Another backend'):
+        bridge.main()

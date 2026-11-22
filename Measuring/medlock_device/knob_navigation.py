@@ -69,8 +69,11 @@ class KnobNavigation:
             selected=self.selected if self.selected in actions else default.get('action')
             for button in state['buttons']:
                 if button['action']==selected:
+                    # Same ring as the patient UI: inset, white on the blue primary button.
                     x,y,w,h = (button[k] for k in ('x','y','width','height'))
-                    ImageDraw.Draw(image).rectangle((x+2,y+2,x+w-3,y+h-3),outline='#d27800',width=3)
+                    radius = 16 if button['action']=='help' else 9
+                    colour = '#ffffff' if button.get('primary') else '#1c2434'
+                    ImageDraw.Draw(image).rounded_rectangle((x+5,y+5,x+w-6,y+h-6),radius=radius,outline=colour,width=3)
         return image
 
     def status(self):

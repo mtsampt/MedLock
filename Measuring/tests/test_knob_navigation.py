@@ -20,8 +20,8 @@ def test_rotate_select_and_visible_focus():
     assert nav.selected=='capture'
     frame=Image.new('RGB',(320,240),'white')
     focused=nav.draw(frame)
-    assert focused.getpixel((182,182))!=(255,255,255)
-    assert frame.getpixel((182,182))==(255,255,255)
+    assert focused.getpixel((220,186))!=(255,255,255)
+    assert frame.getpixel((220,186))==(255,255,255)
     nav.emit('press')
     visible,button=nav.read()
     assert visible['revision']==1 and button['action']=='capture'

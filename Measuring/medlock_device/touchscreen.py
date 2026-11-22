@@ -5,11 +5,34 @@ from PIL import Image, ImageDraw, ImageFont
 
 WIDTH, HEIGHT = 320, 240
 FONTS = Path(__file__).parent / 'fonts'
+# Same tokens as medlock-ui/src/styles.css, so the LCD matches the patient UI design.
+SURFACE, SURFACE_2, INK, INK_SOFT, LINE = '#ffffff', '#f2f4f8', '#1c2434', '#5b6678', '#dde2ea'
+ACCENT, ACCENT_SOFT = '#2f5bd3', '#eaf0fd'
+TONES = {'pass': ('#2e7d4f', '#e6f3ec', '✓'), 'fix': ('#b26a00', '#fdf1df', '!'), 'unable': ('#5a6472', '#eceef1', '?')}
+RADIUS, PAD_X, FOOTER_Y = 14, 10, HEIGHT - 6 - 48
+HELP_X, HELP_W = WIDTH - PAD_X - 84, 84
+SECONDARY = {'help', 'back', 'reset', 'seat', 'missing'}
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=48)
 def font(size, bold=False):
-    return ImageFont.truetype(str(FONTS / ('DejaVuSans-Bold.ttf' if bold else 'DejaVuSans.ttf')), size)
+    """Inter (OFL) for text; bold=True or 'semibold'."""
+    name = {True: 'Inter-Bold.ttf', 'semibold': 'Inter-SemiBold.ttf'}.get(bold, 'Inter-Regular.ttf')
+    return ImageFont.truetype(str(FONTS / name), size)
+
+
+@lru_cache(maxsize=16)
+def symbol_font(size):
+    # Inter's web build has no ✓ / ✕, so symbols come from the bundled DejaVu.
+    return ImageFont.truetype(str(FONTS / 'DejaVuSans-Bold.ttf'), size)
+
+
+def focus_ring(draw, button):
+    """Knob highlight, as in the patient UI: inset ring, white on the blue primary button."""
+    x, y, w, h = (button[key] for key in ('x', 'y', 'width', 'height'))
+    colour = '#ffffff' if button.get('primary') else INK
+    draw.rounded_rectangle((x + 5, y + 5, x + w - 6, y + h - 6), radius=16 if button['action'] == 'help' else 9,
+                           outline=colour, width=3)
 
 
 def view(state):
@@ -62,12 +85,29 @@ def view(state):
         title = ('✓ ' if state['result']['verdict'] == 'pass' else '! ' if state['result']['verdict'] == 'fix' else '? ') + title
     buttons = []
     if not state['help_open']:
-        buttons.append(dict(action='help', label='? Help', x=248, y=6, width=60, height=44))
-    if not state['help_open'] and ((screen == 'supplies' and not state['missing']) or (screen == 'check' and state['simulated'])):
-        buttons.append(dict(action='back', label='Back', x=180, y=6, width=60, height=44))
-    for index, (action, label) in enumerate(actions):
-        buttons.append(dict(action=action, label=label, x=12 + index * 152 if len(actions) == 2 else 12,
-                            y=180, width=144 if len(actions) == 2 else 296, height=48))
+        buttons.append(dict(action='help', label='? Help', x=HELP_X, y=6, width=HELP_W, height=44, primary=False))
+    question = screen == 'supplies' and not state['missing'] and not state['help_open']
+    if question:
+        # No / Yes are the big choice buttons in the body; Back sits in the footer like the other screens.
+        # Knob order stays Back, No, Yes, so the first press lands on Yes.
+        buttons.append(dict(action='back', label='Back', x=PAD_X, y=FOOTER_Y, width=104, height=48, primary=False))
+        half = (WIDTH - 2 * PAD_X - 10) // 2
+        for index, (action, label) in enumerate(actions):
+            buttons.append(dict(action=action, label=label, x=PAD_X + index * (half + 10), y=112, width=half,
+                                height=60, primary=False, choice=True))
+        actions = []
+    elif not state['help_open'] and screen == 'check' and state['simulated']:
+        buttons.append(dict(action='back', label='Back', x=HELP_X - 8 - 84, y=6, width=84, height=44, primary=False))
+    if len(actions) == 2:
+        (left, left_label), (right, right_label) = actions
+        buttons.append(dict(action=left, label=left_label, x=PAD_X, y=FOOTER_Y, width=128, height=48,
+                            primary=left not in SECONDARY))
+        buttons.append(dict(action=right, label=right_label, x=PAD_X + 128 + 8, y=FOOTER_Y,
+                            width=WIDTH - 2 * PAD_X - 136, height=48, primary=right not in SECONDARY))
+    elif actions:
+        (action, label), = actions
+        buttons.append(dict(action=action, label=label, x=WIDTH - PAD_X - 200, y=FOOTER_Y, width=200, height=48,
+                            primary=True))
     return dict(title=title, detail=detail, tone=tone, buttons=buttons)
 
 
@@ -96,38 +136,134 @@ class TouchUI:
 
 def render(state):
     state = dict(state, **view(state))
-    image = Image.new('RGB', (WIDTH, HEIGHT), '#fdfdfd')
+    image = Image.new('RGB', (WIDTH, HEIGHT), SURFACE)
     draw = ImageDraw.Draw(image)
+    screen, protocol = state['screen'], state['protocol']
 
-    def lines(text, y, size, max_lines, bold=False, color='#20272b'):
-        face = font(size, bold)
+    def wrap(text, face, width):
         rows, line = [], ''
-        for word in text.split():
+        for word in text.replace('\n', ' \n ').split(' '):
+            if word == '\n':
+                rows.append(line); line = ''; continue
             candidate = (line + ' ' + word).strip()
-            if draw.textlength(candidate, font=face) > 296 and line:
-                rows.append(line)
-                line = word
+            if draw.textlength(candidate, font=face) > width and line:
+                rows.append(line); line = word
             else:
                 line = candidate
         if line:
             rows.append(line)
+        return rows
+
+    def lines(text, x, y, size=17, color=INK_SOFT, bold=False, width=WIDTH - 2 * PAD_X, max_lines=4,
+              bottom=FOOTER_Y - 6, spacing=None, min_size=15):
+        """Wrap text above `bottom`; shrink down to min_size before cutting with …. Returns the next free y."""
+        while True:
+            face = font(size, bold)
+            step = spacing or round(size * 1.3)
+            fits = max(1, min(max_lines, (bottom - y) // step))
+            rows = wrap(text, face, width)
+            if len(rows) <= fits or size <= min_size:
+                break
+            size, spacing = size - 1, spacing and spacing - 1
+        max_lines = fits
         if len(rows) > max_lines:
             rows = rows[:max_lines]
-            while rows[-1] and draw.textlength(rows[-1] + '…', font=face) > 296:
+            while rows[-1] and draw.textlength(rows[-1] + '…', font=face) > width:
                 rows[-1] = rows[-1][:-1]
             rows[-1] += '…'
         for index, row in enumerate(rows):
-            draw.text((12, y + index * (size + 4)), row, font=face, fill=color)
+            draw.text((x, y + index * step), row, font=face, fill=color)
+        return y + len(rows) * step
 
-    screen = state['screen']
-    step = 0 if screen == 'start' else 1 if screen == 'supplies' else state['prep_index'] + 2 if screen == 'prep' else len(state['protocol']['prep_steps']) + 2
-    draw.text((12, 12), 'MedLock' if not step else f"Step {step} of {len(state['protocol']['prep_steps']) + 2}", font=font(12, True), fill='#626b70')
-    lines(state['title'], 56, 18, 2, bold=True, color=state['tone'])
-    lines(state['detail'], 106, 12, 3)
-    draw.text((12, 162), 'Photo replay · bench prototype' if state['simulated'] else 'Hardware · bench prototype', font=font(10), fill='#626b70')
+    def title(text, y=58, size=22, max_lines=2):
+        return lines(text, PAD_X, y, size=size, color=INK, bold=True, max_lines=max_lines, spacing=round(size * 1.25))
+
+    # Header: brand or "Step X of N", segmented progress, then Back / Help pills on the right.
+    total = len(protocol['prep_steps']) + 2
+    step = 0 if screen == 'start' else 1 if screen == 'supplies' else state['prep_index'] + 2 if screen == 'prep' else total
+    if not state['help_open']:
+        if step:
+            draw.text((PAD_X, 8), f'Step {step} of {total}', font=font(15, 'semibold'), fill=INK_SOFT)
+        else:
+            draw.text((PAD_X, 12), 'MedLock', font=font(18, True), fill=INK)
+        right = min(b['x'] for b in state['buttons'] if b['y'] < 50) - 10
+        if step:
+            gap = 3
+            seg = (right - PAD_X - gap * (total - 1)) / total
+            for index in range(total):
+                x = PAD_X + index * (seg + gap)
+                draw.rounded_rectangle((x, 31, x + seg, 36), radius=3, fill=ACCENT if index < step else LINE)
+
+    if state['help_open']:
+        y = title(state['title'], y=12)
+        lines(state['detail'], PAD_X, y + 6, max_lines=4)
+    elif screen == 'supplies' and not state['missing']:
+        item = protocol['supplies'][state['supply_index']]
+        draw.text((PAD_X, 54), f"Do you have this? · {state['supply_index'] + 1} of {len(protocol['supplies'])}",
+                  font=font(15, 'semibold'), fill=ACCENT)
+        lines(item['label'], PAD_X, 74, size=26, color=INK, bold=True, max_lines=1)
+    elif screen == 'supplies':
+        item = protocol['supplies'][state['supply_index']]
+        y = title(f"Get the {item['label'].lower()}")
+        lines("You need this to prepare the shot. Can't find it? Tap Help to contact your clinic.", PAD_X, y + 4)
+    elif screen == 'prep':
+        prep = protocol['prep_steps'][state['prep_index']]
+        y = title(prep['title'])
+        warning = prep.get('warning')
+        y = lines(prep['detail'], PAD_X, y + 4, bottom=FOOTER_Y - (44 if warning else 6))
+        if warning:
+            face = font(17, True)
+            top = min(y + 6, FOOTER_Y - 42)
+            draw.rounded_rectangle((PAD_X, top, WIDTH - PAD_X, top + 34), radius=10, fill=TONES['fix'][1],
+                                   outline=TONES['fix'][0], width=2)
+            draw.text((PAD_X + 10, top + 17), warning, font=face, fill=TONES['fix'][0], anchor='lm')
+    elif screen == 'result':
+        result = state['result']
+        tone = 'pass' if result['verdict'] == 'pass' else 'fix' if result['verdict'] == 'fix' else 'unable'
+        color, background, symbol = TONES[tone]
+        heading = state['title'][2:] if state['title'][:2] in {'✓ ', '! ', '? '} else state['title']
+        draw.rounded_rectangle((PAD_X, 50, WIDTH - PAD_X, FOOTER_Y - 8), radius=RADIUS, fill=background,
+                               outline=color, width=2)
+        draw.ellipse((PAD_X + 10, 60, PAD_X + 54, 104), fill=color)
+        draw.text((PAD_X + 32, 82), symbol, font=symbol_font(26) if symbol == '✓' else font(26, True),
+                  fill='white', anchor='mm')
+        hx = PAD_X + 64
+        lines(heading, hx, 60, size=20, color=INK, bold=True, width=WIDTH - PAD_X - 10 - hx, max_lines=2,
+              spacing=24, bottom=110)
+        lines(state['detail'], PAD_X + 10, 112, size=16, color=color if tone == 'fix' else INK, bold=True,
+              width=WIDTH - 2 * PAD_X - 20, max_lines=3, bottom=FOOTER_Y - 12, spacing=21)
+    elif screen == 'checking':
+        y = title('Checking your syringe…')
+        draw.arc((PAD_X, y + 8, PAD_X + 40, y + 48), 0, 360, fill=LINE, width=5)
+        draw.arc((PAD_X, y + 8, PAD_X + 40, y + 48), -90, 0, fill=ACCENT, width=5)
+        lines(state['detail'], PAD_X + 54, y + 8, width=WIDTH - 2 * PAD_X - 54, max_lines=3, bottom=HEIGHT - 8)
+    else:
+        y = title(state['title'])
+        lines(state['detail'], PAD_X, y + 4, bottom=FOOTER_Y - 24 if screen in {'start', 'check'} else FOOTER_Y - 6)
+    if not state['help_open'] and screen in {'start', 'check', 'checking'}:
+        draw.text((PAD_X, FOOTER_Y - 20), 'Photo replay · bench prototype' if state['simulated'] else 'Hardware · bench prototype',
+                  font=font(13), fill=INK_SOFT)
+
     for button in state['buttons']:
         x, y, w, h = (button[key] for key in ('x', 'y', 'width', 'height'))
-        secondary = button['action'] in {'help', 'back', 'reset', 'seat', 'missing'}
-        draw.rounded_rectangle((x, y, x + w - 1, y + h - 1), radius=5, fill='#fdfdfd' if secondary else '#2b567c', outline='#d27a00' if state.get('focus_action') == button['action'] else '#cbd0d3', width=3 if state.get('focus_action') == button['action'] else 1)
-        draw.text((x + w / 2, y + h / 2), button['label'], font=font(12 if button['action'] == 'help' else 14, True), fill='#20272b' if secondary else 'white', anchor='mm')
+        primary = button.get('primary', button['action'] not in SECONDARY)
+        pill = y < 50
+        if primary:
+            draw.rounded_rectangle((x, y + 3, x + w - 1, y + h + 1), radius=RADIUS, fill='#c9d4f2')  # soft shadow
+        if button.get('choice'):
+            draw.rounded_rectangle((x, y, x + w - 1, y + h - 1), radius=RADIUS, fill=SURFACE, outline=LINE, width=2)
+            mark = '✓' if button['action'] == 'confirm' else '✕'
+            label_face, mark_face = font(24, 'semibold'), symbol_font(24)
+            total_w = draw.textlength(mark, font=mark_face) + 8 + draw.textlength(button['label'], font=label_face)
+            left = x + (w - total_w) / 2
+            draw.text((left, y + h / 2), mark, font=mark_face, fill=ACCENT, anchor='lm')
+            draw.text((left + draw.textlength(mark, font=mark_face) + 8, y + h / 2), button['label'],
+                      font=label_face, fill=INK, anchor='lm')
+        else:
+            draw.rounded_rectangle((x, y, x + w - 1, y + h - 1), radius=22 if pill else RADIUS,
+                                   fill=ACCENT if primary else SURFACE_2)
+            draw.text((x + w / 2, y + h / 2), button['label'], font=font(16 if pill else 18, 'semibold'),
+                      fill='white' if primary else (INK_SOFT if pill else INK), anchor='mm')
+        if state.get('focus_action') == button['action']:
+            focus_ring(draw, button)
     return image

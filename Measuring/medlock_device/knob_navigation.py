@@ -5,6 +5,8 @@ from pathlib import Path
 
 from PIL import ImageDraw
 
+from .touchscreen import focus_ring
+
 _VISIBLE = object()
 
 
@@ -69,8 +71,7 @@ class KnobNavigation:
             selected=self.selected if self.selected in actions else default.get('action')
             for button in state['buttons']:
                 if button['action']==selected:
-                    x,y,w,h = (button[k] for k in ('x','y','width','height'))
-                    ImageDraw.Draw(image).rectangle((x+2,y+2,x+w-3,y+h-3),outline='#d27800',width=3)
+                    focus_ring(ImageDraw.Draw(image),button)
         return image
 
     def status(self):
